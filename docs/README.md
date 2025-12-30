@@ -1,11 +1,11 @@
-# ThreatGPT Documentation
+# ThreatSimGPT Documentation
 
-Welcome to the ThreatGPT documentation. This directory contains all official documentation organized by category.
+Welcome to the ThreatSimGPT documentation. This directory contains all official documentation organized by category.
 
 ## Documentation Structure
 
 ### [Guides](./guides/)
-User and developer guides for getting started and working with ThreatGPT:
+User and developer guides for getting started and working with ThreatSimGPT:
 - **[User Guide](./guides/USER_GUIDE.md)** - Installation, configuration, and basic usage
 - **[Developer Guide](./guides/DEVELOPER_GUIDE.md)** - Contributing, development setup, and architecture
 - **[Security Guide](./guides/SECURITY_GUIDE.md)** - Security best practices and compliance
@@ -20,7 +20,7 @@ Technical reference documentation:
 
 ### [Community](./community/)
 Community guidelines and contribution information:
-- **[Contributing](./community/CONTRIBUTING.md)** - How to contribute to ThreatGPT
+- **[Contributing](./community/CONTRIBUTING.md)** - How to contribute to ThreatSimGPT
 - **[Code of Conduct](./community/CODE_OF_CONDUCT.md)** - Community standards and expectations
 - **[Security Policy](./community/SECURITY.md)** - Vulnerability reporting and security practices
 
@@ -35,7 +35,7 @@ Community guidelines and contribution information:
 
 - [Main README](../README.md) - Project overview and quick start
 - [Templates](../templates/) - Example threat scenario templates
-- [GitHub Repository](https://github.com/Thundastormgod/ThreatGpt)
+- [GitHub Repository](https://github.com/threatsimgpt-AI/ThreatSimGPT)
 
 ---
 

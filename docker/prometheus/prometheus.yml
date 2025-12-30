@@ -1,9 +1,9 @@
-# Prometheus Configuration for ThreatGPT
+# Prometheus Configuration for ThreatSimGPT
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'threatgpt-monitor'
+    monitor: 'threatsimgpt-monitor'
     environment: 'development'
 
 # Alertmanager configuration (optional)
@@ -27,13 +27,13 @@ scrape_configs:
           service: 'prometheus'
           component: 'monitoring'
 
-  # ThreatGPT API metrics
-  - job_name: 'threatgpt-api'
+  # ThreatSimGPT API metrics
+  - job_name: 'threatsimgpt-api'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['threatgpt-api:8000']
+      - targets: ['threatsimgpt-api:8000']
         labels:
-          service: 'threatgpt-api'
+          service: 'threatsimgpt-api'
           component: 'application'
     scrape_interval: 10s
     scrape_timeout: 5s

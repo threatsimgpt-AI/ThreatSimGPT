@@ -1,5 +1,5 @@
 # ================================
-# ThreatGPT API - Production Dockerfile
+# ThreatSimGPT API - Production Dockerfile
 # ================================
 # Multi-stage build for optimized container size
 
@@ -32,18 +32,18 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 FROM python:3.11-slim
 
 # Set labels
-LABEL maintainer="ThreatGPT Team"
-LABEL description="ThreatGPT - AI-Powered Threat Simulation Platform"
+LABEL maintainer="ThreatSimGPT Team"
+LABEL description="ThreatSimGPT - AI-Powered Threat Simulation Platform"
 LABEL version="1.0.0"
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH="/app/src:$PYTHONPATH"
+    PYTHONPATH="/app:$PYTHONPATH"
 
 # Create app user
-RUN groupadd -r threatgpt && useradd -r -g threatgpt threatgpt
+RUN groupadd -r threatsimgpt && useradd -r -g threatsimgpt threatsimgpt
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -58,17 +58,17 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code
-COPY --chown=threatgpt:threatgpt src/ /app/src/
-COPY --chown=threatgpt:threatgpt templates/ /app/templates/
-COPY --chown=threatgpt:threatgpt config.yaml /app/
-COPY --chown=threatgpt:threatgpt pyproject.toml /app/
+COPY --chown=threatsimgpt:threatsimgpt threatsimgpt/ /app/threatsimgpt/
+COPY --chown=threatsimgpt:threatsimgpt templates/ /app/templates/
+COPY --chown=threatsimgpt:threatsimgpt config.yaml /app/
+COPY --chown=threatsimgpt:threatsimgpt pyproject.toml /app/
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/generated_content /app/reports /app/output && \
-    chown -R threatgpt:threatgpt /app
+    chown -R threatsimgpt:threatsimgpt /app
 
 # Switch to app user
-USER threatgpt
+USER threatsimgpt
 
 # Expose port
 EXPOSE 8000
@@ -78,4 +78,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Default command - run API server
-CMD ["python", "-m", "uvicorn", "threatgpt.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["python", "-m", "uvicorn", "threatsimgpt.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

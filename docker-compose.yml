@@ -1,10 +1,8 @@
-version: '3.8'
-
 # ================================
-# ThreatGPT - Complete Docker Stack
+# ThreatSimGPT - Complete Docker Stack
 # ================================
 # Production-ready containerized deployment
-# Services: PostgreSQL, Redis, Ollama, ThreatGPT API, Prometheus, Grafana
+# Services: PostgreSQL, Redis, Ollama, ThreatSimGPT API, Prometheus, Grafana
 
 services:
   # ================================
@@ -12,65 +10,65 @@ services:
   # ================================
   postgres:
     image: postgres:16-alpine
-    container_name: threatgpt-postgres
+    container_name: threatsimgpt-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-threatgpt}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatgpt_secure_pass_2024}
-      POSTGRES_DB: ${POSTGRES_DB:-threatgpt}
+      POSTGRES_USER: ${POSTGRES_USER:-threatsimgpt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatsimgpt_secure_pass_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-threatsimgpt}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatgpt}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatsimgpt}"]
       interval: 10s
       timeout: 5s
       retries: 5
     labels:
-      com.threatgpt.service: "database"
-      com.threatgpt.description: "PostgreSQL database for persistent storage"
+      com.threatsimgpt.service: "database"
+      com.threatsimgpt.description: "PostgreSQL database for persistent storage"
 
   # ================================
   # Redis Cache
   # ================================
   redis:
     image: redis:7-alpine
-    container_name: threatgpt-redis
+    container_name: threatsimgpt-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
     labels:
-      com.threatgpt.service: "cache"
-      com.threatgpt.description: "Redis for caching and session management"
+      com.threatsimgpt.service: "cache"
+      com.threatsimgpt.description: "Redis for caching and session management"
 
   # ================================
   # Ollama - Local LLM Server
   # ================================
   ollama:
     image: ollama/ollama:latest
-    container_name: threatgpt-ollama
+    container_name: threatsimgpt-ollama
     restart: unless-stopped
     volumes:
       - ollama_models:/root/.ollama
     ports:
       - "11434:11434"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_ORIGINS=*
@@ -81,8 +79,8 @@ services:
       retries: 3
       start_period: 60s
     labels:
-      com.threatgpt.service: "llm"
-      com.threatgpt.description: "Local LLM server with Ollama"
+      com.threatsimgpt.service: "llm"
+      com.threatsimgpt.description: "Local LLM server with Ollama"
     deploy:
       resources:
         limits:
@@ -91,13 +89,13 @@ services:
           memory: 4G
 
   # ================================
-  # ThreatGPT API Server
+  # ThreatSimGPT API Server
   # ================================
-  threatgpt-api:
+  threatsimgpt-api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: threatgpt-api
+    container_name: threatsimgpt-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -108,7 +106,7 @@ services:
         condition: service_started
     environment:
       # Database
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-threatgpt}:${POSTGRES_PASSWORD:-threatgpt_secure_pass_2024}@postgres:5432/${POSTGRES_DB:-threatgpt}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-threatsimgpt}:${POSTGRES_PASSWORD:-threatsimgpt_secure_pass_2024}@postgres:5432/${POSTGRES_DB:-threatsimgpt}
       # Redis
       - REDIS_URL=redis://redis:6379/0
       # LLM Providers
@@ -128,16 +126,16 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      - ./src:/app/src:ro
+      - ./threatsimgpt:/app/threatsimgpt:ro
       - ./templates:/app/templates:ro
       - ./data:/app/data
       - ./logs:/app/logs
       - ./generated_content:/app/generated_content
       - ./reports:/app/reports
     ports:
-      - "8000:8000"
+      - "8001:8000"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -145,15 +143,15 @@ services:
       retries: 3
       start_period: 40s
     labels:
-      com.threatgpt.service: "api"
-      com.threatgpt.description: "ThreatGPT main API server"
+      com.threatsimgpt.service: "api"
+      com.threatsimgpt.description: "ThreatSimGPT main API server"
 
   # ================================
   # Prometheus - Metrics Collection
   # ================================
   prometheus:
     image: prom/prometheus:latest
-    container_name: threatgpt-prometheus
+    container_name: threatsimgpt-prometheus
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -165,26 +163,26 @@ services:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     depends_on:
-      - threatgpt-api
+      - threatsimgpt-api
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
     labels:
-      com.threatgpt.service: "monitoring"
-      com.threatgpt.description: "Prometheus metrics collection"
+      com.threatsimgpt.service: "monitoring"
+      com.threatsimgpt.description: "Prometheus metrics collection"
 
   # ================================
   # Grafana - Metrics Visualization
   # ================================
   grafana:
     image: grafana/grafana:latest
-    container_name: threatgpt-grafana
+    container_name: threatsimgpt-grafana
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
@@ -197,9 +195,9 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     depends_on:
       - prometheus
     healthcheck:
@@ -208,18 +206,18 @@ services:
       timeout: 10s
       retries: 3
     labels:
-      com.threatgpt.service: "monitoring"
-      com.threatgpt.description: "Grafana metrics dashboard"
+      com.threatsimgpt.service: "monitoring"
+      com.threatsimgpt.description: "Grafana metrics dashboard"
 
   # ================================
   # PgAdmin - Database Management (Optional)
   # ================================
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: threatgpt-pgadmin
+    container_name: threatsimgpt-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@threatgpt.local
+      PGADMIN_DEFAULT_EMAIL: admin@threatsimgpt.local
       PGADMIN_DEFAULT_PASSWORD: admin_change_this
       PGADMIN_CONFIG_SERVER_MODE: 'False'
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
@@ -228,55 +226,55 @@ services:
     ports:
       - "5050:80"
     networks:
-      - threatgpt-network
+      - threatsimgpt-network
     depends_on:
       - postgres
     profiles:
       - tools
     labels:
-      com.threatgpt.service: "tools"
-      com.threatgpt.description: "PgAdmin database management interface"
+      com.threatsimgpt.service: "tools"
+      com.threatsimgpt.description: "PgAdmin database management interface"
 
 # ================================
 # Networks
 # ================================
 networks:
-  threatgpt-network:
+  threatsimgpt-network:
     driver: bridge
-    name: threatgpt-network
+    name: threatsimgpt-network
     labels:
-      com.threatgpt.network: "main"
+      com.threatsimgpt.network: "main"
 
 # ================================
 # Volumes
 # ================================
 volumes:
   postgres_data:
-    name: threatgpt-postgres-data
+    name: threatsimgpt-postgres-data
     labels:
-      com.threatgpt.volume: "database"
+      com.threatsimgpt.volume: "database"
   
   redis_data:
-    name: threatgpt-redis-data
+    name: threatsimgpt-redis-data
     labels:
-      com.threatgpt.volume: "cache"
+      com.threatsimgpt.volume: "cache"
   
   ollama_models:
-    name: threatgpt-ollama-models
+    name: threatsimgpt-ollama-models
     labels:
-      com.threatgpt.volume: "models"
+      com.threatsimgpt.volume: "models"
   
   prometheus_data:
-    name: threatgpt-prometheus-data
+    name: threatsimgpt-prometheus-data
     labels:
-      com.threatgpt.volume: "metrics"
+      com.threatsimgpt.volume: "metrics"
   
   grafana_data:
-    name: threatgpt-grafana-data
+    name: threatsimgpt-grafana-data
     labels:
-      com.threatgpt.volume: "dashboards"
+      com.threatsimgpt.volume: "dashboards"
   
   pgadmin_data:
-    name: threatgpt-pgadmin-data
+    name: threatsimgpt-pgadmin-data
     labels:
-      com.threatgpt.volume: "tools"
+      com.threatsimgpt.volume: "tools"

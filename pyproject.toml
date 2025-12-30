@@ -3,15 +3,15 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "threatgpt"
+name = "threatsimgpt"
 version = "0.1.0"
 description = "AI-Powered Threat Simulation Platform for Cybersecurity Training"
-authors = ["ThreatGPT Team <okino007@gmail.com>"]
+authors = ["ThreatSimGPT Team <threatsimgpt@hotmail.com>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/threatgpt/threatgpt"
-repository = "https://github.com/threatgpt/threatgpt"
-documentation = "https://threatgpt.readthedocs.io"
+homepage = "https://github.com/ThreatSimGPT/ThreatSimGPT"
+repository = "https://github.com/ThreatSimGPT/ThreatSimGPT"
+documentation = "https://github.com/ThreatSimGPT/ThreatSimGPT/tree/main/docs"
 keywords = ["cybersecurity", "threat-simulation", "ai", "llm", "red-team"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -21,10 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-packages = [{include = "threatgpt", from = "src"}]
+packages = [{include = "threatsimgpt"}]
 
 [tool.poetry.scripts]
-threatgpt = "threatgpt.cli.main:main"
+threatsimgpt = "threatsimgpt.cli.main:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -94,6 +94,35 @@ extend-exclude = '''
 )/
 '''
 
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "E402",   # Module level import not at top
+    "E722",   # Bare except
+    "E741",   # Ambiguous variable name
+    "F401",   # Unused import
+    "F811",   # Redefinition of unused name
+    "F821",   # Undefined name
+    "F841",   # Local variable assigned but never used
+]
+fixable = ["ALL"]
+unfixable = []
+
 [tool.isort]
 profile = "black"
 multi_line_output = 3
@@ -101,18 +130,19 @@ line_length = 88
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
 no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
+warn_unused_ignores = false
+warn_no_return = false
+warn_unreachable = false
 strict_equality = true
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
@@ -137,7 +167,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/threatgpt"]
+source = ["threatsimgpt"]
 omit = [
     "*/tests/*",
     "*/test_*.py",

@@ -1,4 +1,4 @@
-# Production Configuration for ThreatGPT
+# Production Configuration for ThreatSimGPT
 
 # LLM Provider Configuration
 llm:
@@ -30,8 +30,8 @@ llm:
     api_key: ""  # Set via environment variable OPENROUTER_API_KEY
     model: "openai/gpt-5.1-chat"  # Default model
     base_url: "https://openrouter.ai/api/v1"
-    app_name: "ThreatGPT"
-    site_url: "https://github.com/threatgpt/threatgpt"
+    app_name: "ThreatSimGPT"
+    site_url: "https://github.com/ThreatSimGPT/ThreatSimGPT"
     max_tokens: 3000
     temperature: 0.7
     timeout_seconds: 60
@@ -163,7 +163,7 @@ safety:
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file_path: "logs/threatgpt.log"
+  file_path: "logs/threatsimgpt.log"
   max_file_size_mb: 50
   backup_count: 5
   enable_console_logging: true
@@ -177,7 +177,7 @@ templates:
 
 # Dataset Configuration
 datasets:
-  storage_path: "~/.threatgpt/datasets"
+  storage_path: "~/.threatsimgpt/datasets"
   enron:
     enabled: true
     description: "Enron email corpus for business communication patterns"
@@ -249,11 +249,11 @@ intelligence:
     requests_per_hour: 100
   privacy:
     respect_robots_txt: true
-    user_agent: "ThreatGPT-Research/1.0"
+    user_agent: "ThreatSimGPT-Research/1.0"
 
 # Database Configuration (Optional - for advanced features)
 database:
   enabled: false
-  url: "sqlite:///threatgpt.db"  # Can be PostgreSQL, MySQL, etc.
+  url: "sqlite:///threatsimgpt.db"  # Can be PostgreSQL, MySQL, etc.
   pool_size: 5
   max_overflow: 10

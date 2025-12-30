@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Development setup script for ThreatGPT."""
+"""Development setup script for ThreatSimGPT."""
 
 import subprocess
 import sys
@@ -20,7 +20,7 @@ def run_command(command: str, description: str) -> bool:
 
 def main():
     """Main setup function."""
-    print(" Setting up ThreatGPT development environment...")
+    print(" Setting up ThreatSimGPT development environment...")
     
     commands = [
         ("python -m pip install --upgrade pip", "Upgrading pip"),
@@ -42,7 +42,7 @@ def main():
         print("1. Copy .env.example to .env and configure your settings")
         print("2. Start developing with: poetry shell")
         print("3. Run tests with: pytest")
-        print("4. Start the CLI with: threatgpt --help")
+        print("4. Start the CLI with: threatsimgpt --help")
     else:
         print("\n Setup failed. Please check the errors above.")
         sys.exit(1)

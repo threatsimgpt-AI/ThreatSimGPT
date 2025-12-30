@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "threatsimgpt-vm": {
+      "command": "python",
+      "args": [
+        "-m",
+        "threatsimgpt.mcp.server"
+      ],
+      "env": {
+        "PROXMOX_HOST": "192.168.1.100",
+        "PROXMOX_PORT": "8006",
+        "PROXMOX_USER": "threatsimgpt@pve",
+        "PROXMOX_TOKEN_NAME": "automation",
+        "PROXMOX_TOKEN_VALUE": "YOUR_SECRET_TOKEN_HERE",
+        "PROXMOX_NODE": "pve"
+      }
+    }
+  }
+}

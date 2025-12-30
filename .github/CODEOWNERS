@@ -1,0 +1,127 @@
+# =============================================================================
+# CODEOWNERS for ThreatSimGPT
+# =============================================================================
+# Primary Contact: threatsimgpt@hotmail.com | threatsimgpt@gmail.com
+# Repository Owner: @Thundastormgod
+# 
+# These owners will be requested for review when someone opens a PR.
+# Order matters - later matches take precedence.
+#
+# For issues and questions, contact: @Thundastormgod or threatsimgpt@hotmail.com
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Default Owner - All Files
+# -----------------------------------------------------------------------------
+# All PRs require review from the repository owner
+* @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Core System - Backend Development
+# Maintainer: Jibo (TSG-DEV)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/core/ @Thundastormgod
+/threatsimgpt/config/ @Thundastormgod
+/threatsimgpt/api/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# CLI Interface
+# Maintainer: Jibo (TSG-DEV)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/cli/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# LLM Integration & ML/AI
+# Maintainer: ML/AI Team
+# Contact: threatsimgpt@gmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/llm/ @Thundastormgod
+/threatsimgpt/rag/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Security & Safety - RED Team (Offensive)
+# Maintainers: Temi, Olabisi (TSG-RED)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/safety/ @Thundastormgod
+/SECURITY.md @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# SOC/SIEM & Analytics - BLUE Team (Defensive)
+# Maintainer: David (TSG-BLUE)
+# Contact: threatsimgpt@gmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/analytics/ @Thundastormgod
+/threatsimgpt/intelligence/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Deployment & DevOps
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/deployment/ @Thundastormgod
+/.github/workflows/ @Thundastormgod
+/Dockerfile* @Thundastormgod
+/docker-compose* @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Datasets & Data Processing
+# Contact: threatsimgpt@gmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/datasets/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Platform Integrations
+# Maintainer: Lara (TSG-INTG)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/mcp/ @Thundastormgod
+/threatsimgpt/vm/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Documentation
+# Maintainer: TBD (TSG-DOCS)
+# Contact: threatsimgpt@gmail.com
+# -----------------------------------------------------------------------------
+/docs/ @Thundastormgod
+*.md @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Compliance & Regulations
+# Maintainer: Jerry (TSG-COMP)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/threatsimgpt/feedback/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Templates & Scenarios
+# Maintainers: Temi, Olabisi (TSG-RED)
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/templates/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Tests & Quality Assurance
+# Contact: threatsimgpt@gmail.com
+# -----------------------------------------------------------------------------
+/tests/ @Thundastormgod
+
+# -----------------------------------------------------------------------------
+# Configuration Files
+# Contact: threatsimgpt@hotmail.com
+# -----------------------------------------------------------------------------
+/pyproject.toml @Thundastormgod
+/requirements*.txt @Thundastormgod
+/config.yaml @Thundastormgod
+
+# =============================================================================
+# Issue Assignment Reference (by Maintainer Role)
+# =============================================================================
+# RED Team (Temi, Olabisi): TSG-RED-001 to TSG-RED-008 - Safety, Templates
+# BLUE Team (David): TSG-BLUE-001 to TSG-BLUE-008 - Analytics, Intelligence
+# Backend (Jibo): TSG-DEV-001 to TSG-DEV-008 - Core, API, CLI
+# Compliance (Jerry): TSG-COMP-001 to TSG-COMP-008 - Feedback, Audit
+# Integration (Lara): TSG-INTG-001 to TSG-INTG-008 - MCP, VM, Deployment
+# Docs (TBD): TSG-DOCS-001 to TSG-DOCS-008 - Documentation
+# =============================================================================

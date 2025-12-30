@@ -1,9 +1,9 @@
-# ThreatGPT Configuration Reference
+# ThreatSimGPT Configuration Reference
 
 **Version:** 1.0.0  
 **Last Updated:** November 2025
 
-Complete reference for ThreatGPT configuration including system settings and template schemas.
+Complete reference for ThreatSimGPT configuration including system settings and template schemas.
 
 ---
 
@@ -54,7 +54,7 @@ llm:
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "logs/threatgpt.log"
+  file: "logs/threatsimgpt.log"
   rotation: "daily"  # daily, weekly, size
   max_bytes: 10485760  # 10MB
   backup_count: 5
@@ -322,19 +322,19 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ```bash
 # System configuration overrides
-export THREATGPT_CONFIG_PATH="/path/to/config.yaml"
-export THREATGPT_LOG_LEVEL="DEBUG"
-export THREATGPT_OUTPUT_DIR="./my_output"
+export THREATSIMGPT_CONFIG_PATH="/path/to/config.yaml"
+export THREATSIMGPT_LOG_LEVEL="DEBUG"
+export THREATSIMGPT_OUTPUT_DIR="./my_output"
 
 # LLM configuration overrides
-export THREATGPT_LLM_PROVIDER="openrouter"
-export THREATGPT_LLM_MODEL="openai/gpt-5.1-chat"
-export THREATGPT_MAX_TOKENS="1500"
+export THREATSIMGPT_LLM_PROVIDER="openrouter"
+export THREATSIMGPT_LLM_MODEL="openai/gpt-5.1-chat"
+export THREATSIMGPT_MAX_TOKENS="1500"
 
 # Feature flags
-export THREATGPT_COMPLIANCE_MODE="true"
-export THREATGPT_CONTENT_FILTERING="true"
-export THREATGPT_DEBUG_MODE="false"
+export THREATSIMGPT_COMPLIANCE_MODE="true"
+export THREATSIMGPT_CONTENT_FILTERING="true"
+export THREATSIMGPT_DEBUG_MODE="false"
 ```
 
 ---
@@ -419,7 +419,7 @@ Templates are validated against JSON schema:
 
 ```bash
 # Validate template
-python3 -m threatgpt templates show my_template --validate
+python3 -m threatsimgpt templates show my_template --validate
 ```
 
 **Common Validation Errors:**
@@ -484,12 +484,12 @@ simulation:
 
 3. **Validate:**
    ```bash
-   python3 -m threatgpt templates show my_scenario --validate
+   python3 -m threatsimgpt templates show my_scenario --validate
    ```
 
 4. **Test:**
    ```bash
-   python3 -m threatgpt simulate -s templates/my_scenario.yaml --dry-run
+   python3 -m threatsimgpt simulate -s templates/my_scenario.yaml --dry-run
    ```
 
 ### Advanced Customization
@@ -555,5 +555,5 @@ custom_parameters:
 
 ## Support
 
-- **GitHub Issues:** https://github.com/Thundastormgod/ThreatGpt/issues
-- **Email:** okino007@gmail.com
+- **GitHub Issues:** https://github.com/threatsimgpt-AI/ThreatSimGPT/issues
+- **Email:** threatsimgpt@hotmail.com

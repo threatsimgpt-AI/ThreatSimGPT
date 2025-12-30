@@ -1,4 +1,4 @@
-"""Global test fixtures for ThreatGPT test suite."""
+"""Global test fixtures for ThreatSimGPT test suite."""
 
 import pytest
 import asyncio
@@ -14,12 +14,12 @@ from pathlib import Path
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from threatgpt.core.models import (
+from threatsimgpt.core.models import (
     ThreatScenario,
     ThreatType,
     SimulationStatus
 )
-from threatgpt.llm.base import BaseLLMProvider, LLMResponse
+from threatsimgpt.llm.base import BaseLLMProvider, LLMResponse
 
 
 # ==========================================
@@ -101,7 +101,7 @@ def mock_llm_provider():
 def mock_llm_manager(mock_llm_provider):
     """Provide mock LLM manager."""
     try:
-        from src.threatgpt.llm.manager import LLMManager
+        from src.threatsimgpt.llm.manager import LLMManager
         manager = LLMManager(config={"default_provider": "mock"})
         manager._providers = {"mock": mock_llm_provider}
         manager._active_provider = mock_llm_provider
@@ -228,7 +228,7 @@ logging:
 @pytest.fixture
 def test_database_url() -> str:
     """Test database URL."""
-    return "sqlite:///test_threatgpt.db"
+    return "sqlite:///test_threatsimgpt.db"
 
 
 @pytest.fixture
@@ -313,8 +313,8 @@ def reset_logging():
     import logging
     yield
     # Reset logging to prevent test interference
-    logging.getLogger("threatgpt").handlers = []
-    logging.getLogger("threatgpt").setLevel(logging.WARNING)
+    logging.getLogger("threatsimgpt").handlers = []
+    logging.getLogger("threatsimgpt").setLevel(logging.WARNING)
 
 
 # Test markers

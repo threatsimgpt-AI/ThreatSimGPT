@@ -1,4 +1,4 @@
-# ThreatGPT Generated Content
+# ThreatSimGPT Generated Content
 
 This folder contains AI-generated cybersecurity training content organized by category.
 

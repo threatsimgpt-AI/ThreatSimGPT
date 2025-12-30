@@ -185,7 +185,7 @@ Desktop.ini
 # Linux
 *~
 
-# ThreatGPT specific
+# ThreatSimGPT specific
 *.log
 logs/
 data/
@@ -206,6 +206,7 @@ ai_detection/
 detection/
 
 # Development and Refactoring Documentation
+/dev
 PHASE*.md
 *_PHASE*.md
 REFACTORING_*.md
@@ -258,6 +259,31 @@ check_*.sh
 *_manage.sh
 quick_*.py
 *_diagnostic.py
+
+# ============================================================================
+# LOCAL DEMO SCRIPTS (Not for version control)
+# ============================================================================
+# These demo scripts are for local presentations and testing only
+scripts/demo_launcher.sh
+scripts/full_showcase_demo.sh
+scripts/content_generation_demo.sh
+scripts/team_demo.sh
+scripts/enterprise_simulation.sh
+scripts/team_onboard.sh
+scripts/team_demo_interactive.py
+scripts/team_demo_presentation.py
+scripts/team_task_demo.py
+scripts/create_github_issues.py
+scripts/DEMO_README.md
+scripts/vm_setup/
+
+# ============================================================================
+# PRIVATE ONBOARDING & HR DOCUMENTS
+# ============================================================================
+docs/onboarding/
+docs/DAVID_ONBOARDING.md
+docs/*_ONBOARDING.md
+*_onboarding.md
 
 # Debug and test files (should not be in production)
 debug_*.py
@@ -318,18 +344,76 @@ config/production.yaml
 !TEMPLATE_MANUAL.md
 !TEMPLATE_QUICK_REFERENCE.md
 !TEMPLATE_VALIDATION_GUIDE.md
+# CLI Reference
+!CLI_REFERENCE.md
+# Quick Start Guide
+!QUICK_START.md
+# Install Guide
+!INSTALL.md
+# Contributing and Code of Conduct
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
 # Private repository setup guide
 !SETUP_PRIVATE_REPO.md
-# Ollama integration guide
-!OLLAMA_INTEGRATION_GUIDE.md
-# Prompt engineering documentation
-!PROMPT_ENGINEERING_6_TIER_SYSTEM.md
 
-# Allow all documentation in docs/ folder
-!docs/**/*.md
+# ============================================================================
+# DOCS FOLDER - Selective Allowlist
+# ============================================================================
+# Only allow official, user-facing documentation in docs/
+# Internal planning, team docs, and onboarding are excluded
+
+# First, ignore everything in docs/reference/ 
+docs/reference/*
+
+# Then allow ONLY the configuration reference
+!docs/reference/CONFIGURATION_REFERENCE.md
+
+# Ignore all internal docs at docs/ root level
+docs/AI_INTEGRATION_GUIDE.md
+docs/DEMO_PRESENTER_NOTES.md
+docs/ENV_HANDLING_AUDIT.md
+docs/TEAM_ROLES_ANALYSIS.md
+docs/TEAM_WORKFLOWS.md
+docs/USER_GUIDE.md
+
+# EXCLUDE onboarding (private HR docs)
+docs/onboarding/
+
+# Allow official API documentation
+!docs/api/API_DOCUMENTATION.md
+
+# Allow community documentation
+!docs/community/CODE_OF_CONDUCT.md
+!docs/community/CONTRIBUTING.md
+!docs/community/SECURITY.md
+
+# Allow user-facing guides
+!docs/guides/DEVELOPER_GUIDE.md
+!docs/guides/SECURITY_GUIDE.md
+!docs/guides/USER_GUIDE.md
+
+# Allow docs README
+!docs/README.md
 
 # Allow README files in subdirectories (templates/, generated_content/, etc.)
 !**/README.md
+
+# ============================================================================
+# INTERNAL PLANNING DOCUMENTS (Local Only - NOT for org repo)
+# ============================================================================
+# Team issue assignments - use for creating GitHub issues, then keep local
+ISSUES_ASSIGNMENTS.md
+# Push checklist - internal reference only
+PUSH_CHECKLIST.md
+
+# Onboarding zip packages (for distribution only, not version control)
+*_Onboarding_Package.zip
+ThreatSimGPT_Onboarding_Package.zip
+onboarding_packages/
+*_Onboarding.zip
+
+# Emoji removal script (temp utility)
+remove_emojis.py
 
 # Database files
 *.db
@@ -350,3 +434,39 @@ tmp/
 temp/
 *.tmp
 *.temp
+
+# ============================================================================
+# MAINTAINER ONBOARDING - LOCAL ONLY (HR/Internal Documents)
+# ============================================================================
+# These are internal HR and team documents that should NOT be pushed to
+# the public organizational repository. Keep these local for team use only.
+MAINTAINER_ONBOARDING/
+*_ONBOARDING.md
+*_MAINTAINER.md
+
+# Core Maintainer Roles PDF (internal HR document)
+Core Maintainer Roles*.pdf
+
+# ============================================================================
+# LAUNCH PREPARATION FILES - LOCAL ONLY
+# ============================================================================
+# These are internal preparation documents used during launch
+launch_report*.txt
+LAUNCH_READINESS_REVIEW.md
+
+# Pre-push validation scripts (local development tools)
+scripts/pre_push_check.sh
+scripts/prepare_push.py
+scripts/prepare_for_launch.py
+scripts/allocate_issues.py
+
+# ============================================================================
+# OLD/DEPRECATED DIRECTORY STRUCTURE
+# ============================================================================
+# These directories contain old code that is being phased out
+src/
+
+# Onboarding packages (distributed separately)
+onboarding_packages/
+*_Onboarding_Package.zip
+ThreatSimGPT_Onboarding_Package.zip

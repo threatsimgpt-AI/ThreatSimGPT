@@ -1,4 +1,4 @@
-# ThreatGPT Development Requirements
+# ThreatSimGPT Development Requirements
 # Install with: pip install -r requirements-dev.txt
 
 # Include production requirements

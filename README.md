@@ -1,12 +1,12 @@
-# ThreatGPT: Enterprise AI-Powered Threat Simulation Platform
+# ThreatSimGPT: Enterprise AI-Powered Threat Simulation Platform
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-brightgreen.svg)](https://github.com/Thundastormgod/ThreatGpt)
-[![Code Quality](https://img.shields.io/badge/maintainability-A+-brightgreen.svg)](https://github.com/Thundastormgod/ThreatGpt)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-brightgreen.svg)](https://github.com/ThreatSimGPT/ThreatSimGPT)
+[![Code Quality](https://img.shields.io/badge/maintainability-A+-brightgreen.svg)](https://github.com/ThreatSimGPT/ThreatSimGPT)
 [![Security: Bandit](https://img.shields.io/badge/security-bandit-green.svg)](https://github.com/PyCQA/bandit)
 
-**ThreatGPT** is an enterprise-grade cybersecurity threat simulation platform that leverages Large Language Models (LLMs) to generate realistic, context-aware threat scenarios for security training, red team exercises, and compliance testing.
+**ThreatSimGPT** is an enterprise-grade cybersecurity threat simulation platform that leverages Large Language Models (LLMs) to generate realistic, context-aware threat scenarios for security training, red team exercises, and compliance testing.
 
 ## Overview
 
@@ -37,7 +37,7 @@
 ### System Components
 
 ```
-ThreatGPT Platform
+ThreatSimGPT Platform
 ├── Core Simulation Engine
 │   ├── Template Manager (YAML-based scenario definitions)
 │   ├── Simulation Orchestrator (Execution and workflow management)
@@ -102,8 +102,8 @@ ThreatGPT Platform
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Thundastormgod/ThreatGpt.git
-cd ThreatGpt
+git clone https://github.com/threatsimgpt-AI/ThreatSimGPT.git
+cd ThreatSimGPT
 ```
 
 #### 2. Create Virtual Environment
@@ -154,20 +154,20 @@ simulation:
   
 logging:
   level: INFO
-  file: "./logs/threatgpt.log"
+  file: "./logs/threatsimgpt.log"
 ```
 
 #### 5. Verify Installation
 
 ```bash
 # Check CLI availability
-threatgpt --help
+threatsimgpt --help
 
 # Validate installation
-threatgpt templates validate-all
+threatsimgpt templates validate-all
 
 # Test with dry run (no API calls)
-threatgpt simulate -s templates/executive_phishing.yaml --dry-run
+threatsimgpt simulate -s templates/executive_phishing.yaml --dry-run
 ```
 
 ---
@@ -180,61 +180,61 @@ threatgpt simulate -s templates/executive_phishing.yaml --dry-run
 
 ```bash
 # List all available templates
-threatgpt templates list
+threatsimgpt templates list
 
 # Show template details with validation
-threatgpt templates show executive_phishing --validate
+threatsimgpt templates show executive_phishing --validate
 
 # Validate all templates
-threatgpt templates validate-all
+threatsimgpt templates validate-all
 
 # Check template ecosystem health
-threatgpt templates health
+threatsimgpt templates health
 ```
 
 #### Running Simulations
 
 ```bash
 # Run a simulation
-threatgpt simulate -s templates/executive_phishing.yaml
+threatsimgpt simulate -s templates/executive_phishing.yaml
 
 # Dry run (no API calls)
-threatgpt simulate -s templates/executive_phishing.yaml --dry-run
+threatsimgpt simulate -s templates/executive_phishing.yaml --dry-run
 
 # Specify output directory
-threatgpt simulate -s templates/finance_bec.yaml -o ./output/campaign_001
+threatsimgpt simulate -s templates/finance_bec.yaml -o ./output/campaign_001
 
 # Run with specific LLM provider
-threatgpt simulate -s templates/it_helpdesk.yaml --provider openai
+threatsimgpt simulate -s templates/it_helpdesk.yaml --provider openai
 ```
 
 #### Configuration Management
 
 ```bash
 # Show current configuration
-threatgpt config show
+threatsimgpt config show
 
 # Set configuration value
-threatgpt config set llm.provider openrouter
+threatsimgpt config set llm.provider openrouter
 
 # Validate configuration
-threatgpt config validate
+threatsimgpt config validate
 ```
 
 #### Dataset Management
 
 ```bash
 # List available datasets
-threatgpt datasets list
+threatsimgpt datasets list
 
 # Download and process dataset
-threatgpt datasets download phishtank
+threatsimgpt datasets download phishtank
 
 # Show dataset statistics
-threatgpt datasets stats enron
+threatsimgpt datasets stats enron
 
 # Update all datasets
-threatgpt datasets update-all
+threatsimgpt datasets update-all
 ```
 
 ### REST API
@@ -243,13 +243,13 @@ threatgpt datasets update-all
 
 ```bash
 # Start FastAPI server
-threatgpt api start
+threatsimgpt api start
 
 # Specify host and port
-threatgpt api start --host 0.0.0.0 --port 8000
+threatsimgpt api start --host 0.0.0.0 --port 8000
 
 # Start with auto-reload (development)
-threatgpt api start --reload
+threatsimgpt api start --reload
 ```
 
 #### API Endpoints
@@ -290,10 +290,10 @@ curl "http://localhost:8000/templates"
 ### Python SDK
 
 ```python
-from threatgpt import ThreatGPTClient
+from threatsimgpt import ThreatSimGPTClient
 
 # Initialize client
-client = ThreatGPTClient(api_key="your-api-key", provider="openrouter")
+client = ThreatSimGPTClient(api_key="your-api-key", provider="openrouter")
 
 # Load and run simulation
 simulation = client.load_template("templates/executive_phishing.yaml")
@@ -369,7 +369,7 @@ deployment:
 # Logging Configuration
 logging:
   level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  file: "./logs/threatgpt.log"
+  file: "./logs/threatsimgpt.log"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   rotation: "10 MB"
   retention: 30  # days
@@ -397,8 +397,8 @@ export M365_CLIENT_ID="your-client-id"
 export M365_CLIENT_SECRET="your-client-secret"
 
 # Application Settings
-export THREATGPT_ENV="production"
-export THREATGPT_LOG_LEVEL="INFO"
+export THREATSIMGPT_ENV="production"
+export THREATSIMGPT_LOG_LEVEL="INFO"
 ```
 
 ---
@@ -481,12 +481,12 @@ threat_type: social_engineering
 
 3. **Validate Template:**
 ```bash
-threatgpt templates show my_custom_template --validate
+threatsimgpt templates show my_custom_template --validate
 ```
 
 4. **Run Simulation:**
 ```bash
-threatgpt simulate -s templates/my_custom_template.yaml
+threatsimgpt simulate -s templates/my_custom_template.yaml
 ```
 
 ---
@@ -499,10 +499,10 @@ threatgpt simulate -s templates/my_custom_template.yaml
 
 ```bash
 # Build production image
-docker build -t threatgpt:latest .
+docker build -t threatsimgpt:latest .
 
 # Build with specific tag
-docker build -t threatgpt:v1.0.0 .
+docker build -t threatsimgpt:v1.0.0 .
 ```
 
 #### Run Container
@@ -510,20 +510,20 @@ docker build -t threatgpt:v1.0.0 .
 ```bash
 # Run with environment variables
 docker run -d \
-  --name threatgpt \
+  --name threatsimgpt \
   -p 8000:8000 \
   -e OPENROUTER_API_KEY="your-key" \
   -v $(pwd)/generated_content:/app/generated_content \
   -v $(pwd)/logs:/app/logs \
-  threatgpt:latest
+  threatsimgpt:latest
 
 # Run with config file
 docker run -d \
-  --name threatgpt \
+  --name threatsimgpt \
   -p 8000:8000 \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -v $(pwd)/generated_content:/app/generated_content \
-  threatgpt:latest
+  threatsimgpt:latest
 ```
 
 ### Docker Compose
@@ -534,14 +534,14 @@ docker run -d \
 version: '3.8'
 
 services:
-  threatgpt-api:
-    image: threatgpt:latest
-    container_name: threatgpt-api
+  threatsimgpt-api:
+    image: threatsimgpt:latest
+    container_name: threatsimgpt-api
     ports:
       - "8000:8000"
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - THREATGPT_ENV=production
+      - THREATSIMGPT_ENV=production
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./generated_content:/app/generated_content
@@ -549,16 +549,16 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     
-  threatgpt-worker:
-    image: threatgpt:latest
-    container_name: threatgpt-worker
+  threatsimgpt-worker:
+    image: threatsimgpt:latest
+    container_name: threatsimgpt-worker
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./generated_content:/app/generated_content
       - ./data:/app/data
-    command: ["python", "-m", "threatgpt.worker"]
+    command: ["python", "-m", "threatsimgpt.worker"]
     restart: unless-stopped
 ```
 
@@ -572,7 +572,7 @@ docker-compose up -d
 docker-compose logs -f
 
 # Scale API instances
-docker-compose up -d --scale threatgpt-api=3
+docker-compose up -d --scale threatsimgpt-api=3
 
 # Stop services
 docker-compose down
@@ -588,29 +588,29 @@ docker-compose down
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: threatgpt
+  name: threatsimgpt
   labels:
-    app: threatgpt
+    app: threatsimgpt
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: threatgpt
+      app: threatsimgpt
   template:
     metadata:
       labels:
-        app: threatgpt
+        app: threatsimgpt
     spec:
       containers:
-      - name: threatgpt
-        image: threatgpt:latest
+      - name: threatsimgpt
+        image: threatsimgpt:latest
         ports:
         - containerPort: 8000
         env:
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
-              name: threatgpt-secrets
+              name: threatsimgpt-secrets
               key: openrouter-api-key
         volumeMounts:
         - name: config
@@ -621,49 +621,49 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: threatgpt-config
+          name: threatsimgpt-config
       - name: storage
         persistentVolumeClaim:
-          claimName: threatgpt-pvc
+          claimName: threatsimgpt-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: threatgpt
+  name: threatsimgpt
 spec:
   type: LoadBalancer
   ports:
   - port: 80
     targetPort: 8000
   selector:
-    app: threatgpt
+    app: threatsimgpt
 ```
 
 **Deploy:**
 
 ```bash
 # Create namespace
-kubectl create namespace threatgpt
+kubectl create namespace threatsimgpt
 
 # Create secrets
-kubectl create secret generic threatgpt-secrets \
+kubectl create secret generic threatsimgpt-secrets \
   --from-literal=openrouter-api-key="your-key" \
-  -n threatgpt
+  -n threatsimgpt
 
 # Create config map
-kubectl create configmap threatgpt-config \
+kubectl create configmap threatsimgpt-config \
   --from-file=config.yaml \
-  -n threatgpt
+  -n threatsimgpt
 
 # Apply deployment
-kubectl apply -f k8s/ -n threatgpt
+kubectl apply -f k8s/ -n threatsimgpt
 
 # Check status
-kubectl get pods -n threatgpt
-kubectl get svc -n threatgpt
+kubectl get pods -n threatsimgpt
+kubectl get svc -n threatsimgpt
 
 # View logs
-kubectl logs -f deployment/threatgpt -n threatgpt
+kubectl logs -f deployment/threatsimgpt -n threatsimgpt
 ```
 
 ---
@@ -742,7 +742,7 @@ kubectl logs -f deployment/threatgpt -n threatgpt
 
 ```bash
 # Enable metrics endpoint
-threatgpt api start --metrics
+threatsimgpt api start --metrics
 
 # Prometheus metrics available at /metrics
 curl http://localhost:8000/metrics
@@ -768,8 +768,8 @@ curl http://localhost:8000/health
 ### Quick Links
 
 - **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs) (when running)
-- **GitHub Repository**: [https://github.com/Thundastormgod/ThreatGpt](https://github.com/Thundastormgod/ThreatGpt)
-- **Issue Tracker**: [https://github.com/Thundastormgod/ThreatGpt/issues](https://github.com/Thundastormgod/ThreatGpt/issues)
+- **GitHub Repository**: [https://github.com/threatsimgpt-AI/ThreatSimGPT](https://github.com/threatsimgpt-AI/ThreatSimGPT)
+- **Issue Tracker**: [https://github.com/threatsimgpt-AI/ThreatSimGPT/issues](https://github.com/threatsimgpt-AI/ThreatSimGPT/issues)
 
 ---
 
@@ -781,8 +781,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone repository
-git clone https://github.com/Thundastormgod/ThreatGpt.git
-cd ThreatGpt
+git clone https://github.com/threatsimgpt-AI/ThreatSimGPT.git
+cd ThreatSimGPT
 
 # Create virtual environment
 python -m venv .venv
@@ -823,7 +823,7 @@ mypy src/
 
 #### Installation Issues
 
-**Problem**: `threatgpt: command not found`
+**Problem**: `threatsimgpt: command not found`
 
 **Solution**: Activate virtual environment
 ```bash
@@ -858,7 +858,7 @@ cp config.yaml.example config.yaml
 echo $OPENROUTER_API_KEY
 
 # Or set in config.yaml
-threatgpt config set llm.openrouter.api_key "your-key"
+threatsimgpt config set llm.openrouter.api_key "your-key"
 ```
 
 #### Runtime Issues
@@ -867,8 +867,8 @@ threatgpt config set llm.openrouter.api_key "your-key"
 
 **Solution**: Validate and fix templates
 ```bash
-threatgpt templates show my_template --validate
-threatgpt templates fix my_template
+threatsimgpt templates show my_template --validate
+threatsimgpt templates fix my_template
 ```
 
 **Problem**: Simulation fails with timeout
@@ -882,11 +882,11 @@ llm:
 
 ### Getting Help
 
-- **Check Logs**: `logs/threatgpt.log`
-- **Validate Configuration**: `threatgpt config validate`
-- **Test Connection**: `threatgpt llm test`
-- **GitHub Issues**: [Report a bug](https://github.com/Thundastormgod/ThreatGpt/issues)
-- **Email Support**: okino007@gmail.com
+- **Check Logs**: `logs/threatsimgpt.log`
+- **Validate Configuration**: `threatsimgpt config validate`
+- **Test Connection**: `threatsimgpt llm test`
+- **GitHub Issues**: [Report a bug](https://github.com/threatsimgpt-AI/ThreatSimGPT/issues)
+- **Email Support**: threatsimgpt@hotmail.com
 
 ---
 
@@ -896,7 +896,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Third-Party Licenses
 
-ThreatGPT uses the following open-source libraries:
+ThreatSimGPT uses the following open-source libraries:
 - FastAPI (MIT License)
 - Pydantic (MIT License)
 - aiohttp (Apache 2.0)
@@ -918,10 +918,10 @@ Full license information available in `LICENSE` file.
 
 ## Support & Contact
 
-- **Documentation**: [https://github.com/Thundastormgod/ThreatGpt](https://github.com/Thundastormgod/ThreatGpt)
-- **Issues**: [GitHub Issues](https://github.com/Thundastormgod/ThreatGpt/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Thundastormgod/ThreatGpt/discussions)
-- **Email**: okino007@gmail.com
+- **Documentation**: [https://github.com/threatsimgpt-AI/ThreatSimGPT](https://github.com/threatsimgpt-AI/ThreatSimGPT)
+- **Issues**: [GitHub Issues](https://github.com/threatsimgpt-AI/ThreatSimGPT/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/threatsimgpt-AI/ThreatSimGPT/discussions)
+- **Email**: threatsimgpt@hotmail.com
 - **Twitter**: [@Thundastormgod](https://twitter.com/Thundastormgod)
 
 ---
@@ -952,7 +952,7 @@ Full license information available in `LICENSE` file.
 
 **Important Disclaimer**
 
-ThreatGPT is a simulation tool designed exclusively for:
+ThreatSimGPT is a simulation tool designed exclusively for:
 - **Authorized security testing and training**
 - **Educational purposes**
 - **Research and development**

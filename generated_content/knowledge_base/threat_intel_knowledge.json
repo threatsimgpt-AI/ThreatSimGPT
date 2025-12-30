@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "scenario": "Advanced Threat Scenario",
+      "threat_type": "spear_phishing",
+      "mitre_techniques": [
+        "T1566.001",
+        "T1566.002",
+        "T1598"
+      ],
+      "timestamp": "2025-12-23T20:12:08.265755",
+      "content_hash": 7929630869606143706
+    }
+  ],
+  "last_updated": "2025-12-23T20:12:08.265771"
+}

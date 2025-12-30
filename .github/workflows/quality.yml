@@ -31,7 +31,7 @@ jobs:
     
     - name: Generate coverage report
       run: |
-        pytest tests/ --cov=src/threatgpt/ --cov-report=xml
+        pytest tests/ --cov=threatsimgpt/ --cov-report=xml
     
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@master

@@ -1,11 +1,11 @@
-# ThreatGPT Threat Scenario Template
+# ThreatSimGPT Threat Scenario Template
 
 metadata:
   name: Adaptive Multi-Vector Attack Simulation
   description: Advanced scenario with high variability, multiple attack vectors, and
     AI-driven adaptability
   version: 2.0.0
-  author: ThreatGPT Advanced Scenarios
+  author: ThreatSimGPT Advanced Scenarios
   created_at: '2025-09-26T16:00:00Z'
   tags:
   - advanced
@@ -18,6 +18,8 @@ metadata:
   updated_at: '2025-09-27T03:25:48.915139Z'
 threat_type: advanced_persistent_threat
 delivery_vector: email
+difficulty_level: 9
+estimated_duration: 60
 target_profile:
   role: '{VARIABLE:executive,manager,specialist,analyst}'
   seniority: mid
@@ -38,24 +40,26 @@ target_profile:
     previous_incident_exposure: '{BOOLEAN:true,false}'
 behavioral_pattern:
   mitre_attack_techniques:
-    initial_access:
     - T1566.001
     - T1566.002
     - T1566.003
-    execution:
     - T1204.001
     - T1204.002
-    persistence:
     - T1547.001
     - T1543.003
   psychological_triggers:
-    primary: '{VARIABLE:authority,urgency,scarcity,social_proof,reciprocity,commitment}'
-    secondary: '{VARIABLE:fear,greed,curiosity,helpfulness,vanity}'
-    intensity_level: '{RANGE:1-10}'
+    - authority
+    - urgency
+    - scarcity
+    - social_proof
+    - reciprocity
+    - fear
   social_engineering_tactics:
-    approach_style: '{VARIABLE:aggressive,subtle,friendly,professional,technical}'
-    credibility_building: '{VARIABLE:name_dropping,technical_jargon,insider_knowledge,credentials}'
-    pressure_application: '{VARIABLE:time_pressure,authority_pressure,peer_pressure,consequence_pressure}'
+    - aggressive
+    - subtle
+    - technical
+    - name_dropping
+    - time_pressure
 simulation_parameters:
   max_iterations: 3
   max_duration_minutes: 60

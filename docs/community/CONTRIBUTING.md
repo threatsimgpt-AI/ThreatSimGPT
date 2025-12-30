@@ -1,6 +1,6 @@
-# Contributing to ThreatGPT
+# Contributing to ThreatSimGPT
 
-We welcome contributions to ThreatGPT! This document provides guidance on how to contribute effectively to the project.
+We welcome contributions to ThreatSimGPT! This document provides guidance on how to contribute effectively to the project.
 
 ## Code of Conduct
 
@@ -12,8 +12,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to ensure a wel
 
 1. **Fork and Clone the Repository**
    ```bash
-   git clone https://github.com/your-username/threatgpt.git
-   cd threatgpt
+   git clone https://github.com/your-username/threatsimgpt.git
+   cd threatsimgpt
    ```
 
 2. **Set up Python Environment**
@@ -119,7 +119,7 @@ pre-commit run --all-files
 python -m pytest
 
 # Run with coverage
-python -m pytest --cov=src/threatgpt --cov-report=html
+python -m pytest --cov=src/threatsimgpt --cov-report=html
 
 # Run specific test types
 python -m pytest -m unit          # Unit tests only
@@ -225,8 +225,8 @@ tests/
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from threatgpt.core.simulator import ThreatSimulator
-from threatgpt.config.models import ThreatScenario
+from threatsimgpt.core.simulator import ThreatSimulator
+from threatsimgpt.config.models import ThreatScenario
 
 @pytest.mark.asyncio
 async def test_threat_simulation_success():
@@ -238,7 +238,7 @@ async def test_threat_simulation_success():
         # ... other fields
     )
     
-    with patch('threatgpt.llm.manager.LLMManager') as mock_llm:
+    with patch('threatsimgpt.llm.manager.LLMManager') as mock_llm:
         mock_llm.generate.return_value = "Generated threat content"
         simulator = ThreatSimulator(mock_llm)
         
@@ -256,8 +256,8 @@ async def test_threat_simulation_success():
 Understanding the project structure helps in making targeted contributions:
 
 ```
-threatgpt/
-├── src/threatgpt/          # Main application code
+threatsimgpt/
+├── src/threatsimgpt/          # Main application code
 │   ├── api/               # REST API endpoints
 │   ├── cli/               # Command-line interface
 │   ├── config/            # Configuration management
@@ -287,7 +287,7 @@ threatgpt/
 - **Testing**: Increase test coverage and add edge case testing
 
 ### Feature Requests
-Check our [GitHub Issues](https://github.com/threatgpt/threatgpt/issues) for current feature requests and bug reports.
+Check our [GitHub Issues](https://github.com/threatsimgpt-AI/ThreatSimGPT/issues) for current feature requests and bug reports.
 
 ## Release Process
 
@@ -301,7 +301,7 @@ Check our [GitHub Issues](https://github.com/threatgpt/threatgpt/issues) for cur
 
 - **GitHub Issues**: For bug reports and feature requests
 - **GitHub Discussions**: For questions and community discussion
-- **Email**: okino007@gmail.com for security-related concerns
+- **Email**: threatsimgpt@hotmail.com for security-related concerns
 
 ## Recognition
 
@@ -310,4 +310,4 @@ Contributors will be recognized in:
 - Release notes
 - Project documentation
 
-Thank you for contributing to ThreatGPT! Your efforts help make cybersecurity training more effective and accessible.
+Thank you for contributing to ThreatSimGPT! Your efforts help make cybersecurity training more effective and accessible.

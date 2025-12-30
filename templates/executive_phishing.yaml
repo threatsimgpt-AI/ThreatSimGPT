@@ -1,11 +1,11 @@
-# ThreatGPT Threat Scenario Template
+# ThreatSimGPT Threat Scenario Template
 
 metadata:
   name: Executive Spear-Phishing Campaign
   description: Advanced spear-phishing attack targeting C-level executives with board
     meeting pretext and document sharing lure
   version: 1.2.0
-  author: ThreatGPT Security Team
+  author: ThreatSimGPT Security Team
   created_at: '2024-01-15T10:00:00Z'
   updated_at: '2024-01-20T14:30:00Z'
   tags:

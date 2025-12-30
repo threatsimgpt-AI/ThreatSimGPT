@@ -1,5 +1,5 @@
 # =============================================================================
-# ThreatGPT Template - Simple Phishing Example
+# ThreatSimGPT Template - Simple Phishing Example
 # =============================================================================
 # This is a basic template showing all required fields and common options.
 # Copy this template and modify for your specific scenario needs.
@@ -7,8 +7,8 @@
 # USAGE:
 # 1. Copy this file: cp templates/sample_phishing_template.yaml templates/my_template.yaml
 # 2. Modify the fields below for your scenario
-# 3. Validate: threatgpt simulate --dry-run -s templates/my_template.yaml
-# 4. Test: threatgpt simulate -s templates/my_template.yaml
+# 3. Validate: threatsimgpt simulate --dry-run -s templates/my_template.yaml
+# 4. Test: threatsimgpt simulate -s templates/my_template.yaml
 
 # Template Metadata (Required)
 metadata:

@@ -1,5 +1,5 @@
 # ================================
-# ThreatGPT - Essential Requirements
+# ThreatSimGPT - Essential Requirements
 # ================================
 # Core dependencies for Docker deployment
 # Last Updated: November 22, 2025
@@ -77,6 +77,12 @@ cryptography==41.0.7
 tenacity==8.2.3
 python-dateutil==2.8.2
 email-validator==2.1.0
+
+# ================================
+# MCP Server (VM Attack Simulation)
+# ================================
+mcp>=1.0.0
+asyncssh>=2.14.0
 
 # Development Dependencies (Optional - install with: pip install -r requirements-dev.txt)
 # pytest>=7.4.0,<8.0.0

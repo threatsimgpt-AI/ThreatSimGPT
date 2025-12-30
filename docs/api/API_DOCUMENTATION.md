@@ -1,17 +1,17 @@
-# ThreatGPT API Documentation
+# ThreatSimGPT API Documentation
 
 **Version:** 1.0.0  
 **Last Updated:** November 2025
 
 ## Overview
 
-ThreatGPT provides a RESTful API for programmatic access to threat simulation capabilities. The API enables enterprises to integrate threat scenario generation, content validation, and simulation orchestration into their security workflows.
+ThreatSimGPT provides a RESTful API for programmatic access to threat simulation capabilities. The API enables enterprises to integrate threat scenario generation, content validation, and simulation orchestration into their security workflows.
 
 ## Base Configuration
 
 ### Base URL
 ```
-Production: https://api.threatgpt.io/v1
+Production: https://api.threatsimgpt.io/v1
 Development: http://localhost:8000
 ```
 
@@ -20,7 +20,7 @@ Development: http://localhost:8000
 Production deployments require API key authentication:
 
 ```bash
-curl -X GET "https://api.threatgpt.io/v1/health" \
+curl -X GET "https://api.threatsimgpt.io/v1/health" \
      -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
@@ -365,14 +365,14 @@ Configure webhooks to receive real-time notifications:
 
 Official SDKs available:
 
-- **Python:** `pip install threatgpt-sdk`
-- **Node.js:** `npm install @threatgpt/sdk`
-- **Go:** `go get github.com/threatgpt/go-sdk`
+- **Python:** `pip install threatsimgpt-sdk`
+- **Node.js:** `npm install @threatsimgpt/sdk`
+- **Go:** `go get github.com/threatsimgpt/go-sdk`
 
 ---
 
 ## Support
 
-- **Documentation:** https://docs.threatgpt.io
-- **API Status:** https://status.threatgpt.io
-- **Support Email:** support@threatgpt.io
+- **Documentation:** https://docs.threatsimgpt.io
+- **API Status:** https://status.threatsimgpt.io
+- **Support Email:** support@threatsimgpt.io

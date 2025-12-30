@@ -1,0 +1,61 @@
+name: 📚 Documentation Issue
+description: Report missing, incorrect, or unclear documentation
+title: "[DOCS] "
+labels: ["documentation", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve the documentation! Please describe the documentation issue.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect documentation
+        - Unclear documentation
+        - Outdated documentation
+        - Typo/Grammar
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Document Location
+      description: URL or file path of the affected documentation
+      placeholder: "docs/USER_GUIDE.md or https://..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue
+      placeholder: The documentation says X, but it should say Y...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How could the documentation be improved?
+      placeholder: I suggest changing it to...
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Would you be willing to submit a PR for this?
+      options:
+        - "Yes, I'd like to fix this"
+        - "No, but I can review the fix"
+    validations:
+      required: true

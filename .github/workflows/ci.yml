@@ -36,20 +36,20 @@ jobs:
     
     - name: Lint with ruff
       run: |
-        ruff check src/ tests/
-        ruff format --check src/ tests/
+        ruff check threatsimgpt/ tests/
+        ruff format --check threatsimgpt/ tests/
     
     - name: Type check with mypy
       run: |
-        mypy src/threatgpt/
+        mypy threatsimgpt/
     
     - name: Test with pytest
       run: |
-        pytest tests/ --cov=src/threatgpt/ --cov-report=xml --cov-report=term-missing
+        pytest tests/ --cov=threatsimgpt/ --cov-report=xml --cov-report=term-missing
     
     - name: Security scan with bandit
       run: |
-        bandit -r src/threatgpt/ -f json -o bandit-report.json
+        bandit -r threatsimgpt/ -f json -o bandit-report.json
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

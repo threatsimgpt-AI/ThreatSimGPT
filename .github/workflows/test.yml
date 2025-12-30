@@ -19,7 +19,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: threatgpt_test
+          POSTGRES_DB: threatsimgpt_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -70,24 +70,24 @@ jobs:
 
     - name: Run linting
       run: |
-        poetry run flake8 src/ tests/
-        poetry run black --check src/ tests/
-        poetry run isort --check-only src/ tests/
-        poetry run mypy src/
+        poetry run flake8 threatsimgpt/ tests/
+        poetry run black --check threatsimgpt/ tests/
+        poetry run isort --check-only threatsimgpt/ tests/
+        poetry run mypy threatsimgpt/
 
     - name: Run security checks
       run: |
-        poetry run bandit -r src/
+        poetry run bandit -r threatsimgpt/
         poetry run safety check
 
     - name: Run tests
       env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threatgpt_test
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threatsimgpt_test
         REDIS_URL: redis://localhost:6379/0
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       run: |
-        poetry run pytest --cov=src/threatgpt --cov-report=xml --cov-report=term-missing
+        poetry run pytest --cov=threatsimgpt --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

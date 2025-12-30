@@ -1,12 +1,12 @@
-# ThreatGPT Threat Scenario Template
+# ThreatSimGPT Threat Scenario Template
 # Supply Chain Compromise - Advanced Third-Party Trust Exploitation
-# Version 2.0.0 - Compatible with ThreatGPT v2.x
+# Version 2.0.0 - Compatible with ThreatSimGPT v2.x
 
 metadata:
   name: Supply Chain Trust Exploitation Simulation
   description: Advanced supply chain attack leveraging vendor relationships, trusted partnerships, and multi-stage compromise tactics
   version: 2.0.0
-  author: ThreatGPT Advanced Scenarios
+  author: ThreatSimGPT Advanced Scenarios
   created_at: '2025-09-27T10:30:00Z'
   tags:
   - advanced

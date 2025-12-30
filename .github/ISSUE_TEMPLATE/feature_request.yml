@@ -1,0 +1,110 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for ThreatSimGPT
+title: "[FEATURE] "
+labels: ["enhancement", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Your input helps make ThreatSimGPT better.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Existing Issue Check
+      description: Please confirm you've checked for existing feature requests
+      options:
+        - label: I have searched existing issues and this is a new feature request
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Describe it.
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: I would like ThreatSimGPT to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions you've considered
+      placeholder: I also considered...
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component would this feature affect?
+      options:
+        - CLI
+        - API
+        - LLM Integration
+        - Template System
+        - RAG System
+        - Safety Framework
+        - Configuration
+        - Documentation
+        - New Component
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Nice to have
+        - Important
+        - Critical for my use case
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Would you be willing to contribute to implementing this feature?
+      options:
+        - "Yes, I'd like to implement this"
+        - "Yes, I can help with testing"
+        - "Yes, I can help with documentation"
+        - "No, but I can provide feedback"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Describe a specific use case for this feature
+      placeholder: In my organization, we would use this to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockup
+    attributes:
+      label: Mockup/Examples
+      description: If applicable, provide mockups, examples, or code snippets
+      render: python
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context or screenshots about the feature request

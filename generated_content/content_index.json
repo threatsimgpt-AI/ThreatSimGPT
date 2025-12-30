@@ -1,12 +1,23 @@
 {
-  "extraction_timestamp": "2025-11-22T19:55:29.052166",
+  "extraction_timestamp": "2025-12-24T14:31:57.628402",
   "statistics": {
-    "total_files": 4,
-    "content_items": 4,
+    "total_files": 30,
+    "content_items": 30,
     "scenarios": 0,
-    "phone_scripts": 1,
-    "email_templates": 3,
+    "phone_scripts": 0,
+    "email_templates": 2,
     "training_materials": 0,
+    "mitigation_playbooks": 4,
+    "team_playbooks": {
+      "blue_team": 3,
+      "red_team": 3,
+      "purple_team": 3,
+      "soc": 3,
+      "threat_intel": 3,
+      "grc": 3,
+      "incident_response": 3,
+      "security_awareness": 3
+    },
     "reports": 0
   },
   "folders": {
@@ -14,6 +25,15 @@
     "phone_scripts": "Social engineering phone call scripts",
     "email_templates": "Phishing and spear-phishing email examples",
     "training_materials": "Security awareness training content",
+    "training_materials/mitigation_playbooks": "Defensive mitigation playbooks with response procedures",
+    "training_materials/team_playbooks/blue_team": "Blue Team defensive detection and monitoring playbooks",
+    "training_materials/team_playbooks/red_team": "Red Team offensive techniques and evasion playbooks",
+    "training_materials/team_playbooks/purple_team": "Purple Team collaborative testing and gap analysis playbooks",
+    "training_materials/team_playbooks/soc": "SOC alert triage and investigation playbooks",
+    "training_materials/team_playbooks/threat_intel": "Threat Intelligence analysis and IOC collection playbooks",
+    "training_materials/team_playbooks/grc": "GRC risk assessment and compliance mapping playbooks",
+    "training_materials/team_playbooks/incident_response": "Incident Response procedures and evidence collection playbooks",
+    "training_materials/team_playbooks/security_awareness": "Security Awareness training modules and simulation campaigns",
     "reports": "Analysis and summary reports"
   }
 }

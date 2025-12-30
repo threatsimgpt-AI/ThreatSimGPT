@@ -1,9 +1,9 @@
-# ThreatGPT Developer Guide
+# ThreatSimGPT Developer Guide
 
 **Version:** 1.0.0  
 **Last Updated:** November 2025
 
-Comprehensive guide for contributing to ThreatGPT, understanding the architecture, and developing new features.
+Comprehensive guide for contributing to ThreatSimGPT, understanding the architecture, and developing new features.
 
 ---
 
@@ -31,8 +31,8 @@ Comprehensive guide for contributing to ThreatGPT, understanding the architectur
 
 ```bash
 # Clone repository
-git clone https://github.com/Thundastormgod/ThreatGpt.git
-cd ThreatGpt
+git clone https://github.com/threatsimgpt-AI/ThreatSimGPT.git
+cd ThreatSimGPT
 
 # Create virtual environment
 python3 -m venv .venv
@@ -73,9 +73,9 @@ mkdocs                # Alternative docs
 ### Directory Structure
 
 ```
-ThreatGpt/
+ThreatSimGPT/
 ├── src/
-│   └── threatgpt/
+│   └── threatsimgpt/
 │       ├── __init__.py
 │       ├── __main__.py          # CLI entry point
 │       ├── api/                 # REST API
@@ -336,7 +336,7 @@ tests/
 
 ```python
 import pytest
-from threatgpt.core.simulator import ThreatSimulator
+from threatsimgpt.core.simulator import ThreatSimulator
 
 def test_simulator_initialization():
     """Test simulator creates successfully."""
@@ -368,7 +368,7 @@ pytest
 pytest tests/unit/test_simulator.py
 
 # Run with coverage
-pytest --cov=src/threatgpt --cov-report=html
+pytest --cov=src/threatsimgpt --cov-report=html
 
 # Run specific test
 pytest tests/unit/test_simulator.py::test_simulator_initialization
@@ -383,7 +383,7 @@ Define reusable fixtures in `conftest.py`:
 
 ```python
 import pytest
-from threatgpt.core.models import ThreatScenario
+from threatsimgpt.core.models import ThreatScenario
 
 @pytest.fixture
 def sample_scenario():
@@ -398,7 +398,7 @@ def sample_scenario():
 @pytest.fixture
 async def llm_manager():
     """Create LLM manager for testing."""
-    from threatgpt.llm.manager import LLMManager
+    from threatsimgpt.llm.manager import LLMManager
     return LLMManager()
 ```
 
@@ -411,7 +411,7 @@ async def llm_manager():
 1. **Fork Repository**
    ```bash
    # Fork on GitHub, then clone
-   git clone https://github.com/YOUR_USERNAME/ThreatGpt.git
+   git clone https://github.com/YOUR_USERNAME/ThreatSimGPT.git
    ```
 
 2. **Create Feature Branch**
@@ -440,7 +440,7 @@ async def llm_manager():
    bandit -r src/
    
    # Run tests
-   pytest --cov=src/threatgpt
+   pytest --cov=src/threatsimgpt
    ```
 
 5. **Commit Changes**
@@ -485,11 +485,11 @@ chore: maintenance tasks
 1. **Create Provider Class**
 
 ```python
-# src/threatgpt/llm/providers/my_provider.py
+# src/threatsimgpt/llm/providers/my_provider.py
 
 from typing import Optional
-from threatgpt.llm.base import BaseLLMProvider
-from threatgpt.llm.models import LLMResponse
+from threatsimgpt.llm.base import BaseLLMProvider
+from threatsimgpt.llm.models import LLMResponse
 
 class MyProvider(BaseLLMProvider):
     """Custom LLM provider implementation."""
@@ -516,9 +516,9 @@ class MyProvider(BaseLLMProvider):
 2. **Register Provider**
 
 ```python
-# src/threatgpt/llm/manager.py
+# src/threatsimgpt/llm/manager.py
 
-from threatgpt.llm.providers.my_provider import MyProvider
+from threatsimgpt.llm.providers.my_provider import MyProvider
 
 class LLMManager:
     def __init__(self):
@@ -546,7 +546,7 @@ llm:
 1. **Create Command Module**
 
 ```python
-# src/threatgpt/cli/mycommand.py
+# src/threatsimgpt/cli/mycommand.py
 
 import click
 
@@ -560,13 +560,13 @@ def my_command(option: str):
 2. **Register in Main CLI**
 
 ```python
-# src/threatgpt/cli/main.py
+# src/threatsimgpt/cli/main.py
 
-from threatgpt.cli.mycommand import my_command
+from threatsimgpt.cli.mycommand import my_command
 
 @click.group()
 def cli():
-    """ThreatGPT CLI."""
+    """ThreatSimGPT CLI."""
     pass
 
 cli.add_command(my_command)
@@ -586,7 +586,7 @@ logging:
 
 ```bash
 # Or via environment
-export THREATGPT_LOG_LEVEL=DEBUG
+export THREATSIMGPT_LOG_LEVEL=DEBUG
 ```
 
 ### Using Python Debugger
@@ -606,10 +606,10 @@ breakpoint()
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: ThreatGPT CLI",
+      "name": "Python: ThreatSimGPT CLI",
       "type": "python",
       "request": "launch",
-      "module": "threatgpt.cli.main",
+      "module": "threatsimgpt.cli.main",
       "args": ["simulate", "-s", "templates/executive_phishing.yaml"],
       "console": "integratedTerminal"
     }
@@ -649,6 +649,6 @@ python -m twine upload dist/*
 
 ## Support
 
-- **Issues:** https://github.com/Thundastormgod/ThreatGpt/issues
-- **Discussions:** https://github.com/Thundastormgod/ThreatGpt/discussions
-- **Email:** okino007@gmail.com
+- **Issues:** https://github.com/threatsimgpt-AI/ThreatSimGPT/issues
+- **Discussions:** https://github.com/threatsimgpt-AI/ThreatSimGPT/discussions
+- **Email:** threatsimgpt@hotmail.com

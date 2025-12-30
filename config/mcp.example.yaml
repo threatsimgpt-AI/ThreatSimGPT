@@ -1,0 +1,97 @@
+# ThreatSimGPT MCP Server Configuration
+# 
+# This file configures the MCP server for AI-driven VM attack simulations.
+# Copy to ~/.threatsimgpt/mcp.yaml and edit for your environment.
+
+# Server identification
+server_name: threatsimgpt-vm
+log_level: INFO
+
+# Proxmox VE Connection
+# ====================
+# Configure your Proxmox VE server connection here.
+# For security, prefer environment variables for token_value:
+#   export PROXMOX_TOKEN_VALUE="your-secret-token"
+proxmox:
+  host: 192.168.1.100        # Your Proxmox server IP/hostname
+  port: 8006                  # API port (default: 8006)
+  user: threatsimgpt@pve         # Proxmox user (user@realm format)
+  token_name: automation      # API token name
+  # token_value: ""           # NEVER store in file - use environment variable
+  node: pve                   # Proxmox node name
+  verify_ssl: false           # Set true in production with valid SSL
+
+# Network Isolation
+# =================
+# CRITICAL: Attack simulations MUST be isolated from production networks.
+# Only targets in allowed_networks can be attacked.
+network:
+  attack_network: 10.0.100.0/24     # Isolated network for attack VMs
+  attack_bridge: vmbr1               # Proxmox bridge for attack network
+  management_network: 192.168.1.0/24 # Management network (read-only access)
+  allowed_networks:
+    - 10.0.100.0/24                  # Only attack network is allowed as target
+
+# Safety Controls
+# ==============
+# Additional safety measures beyond network isolation.
+safety:
+  max_concurrent_vms: 10         # Maximum VMs allowed simultaneously
+  auto_destroy_hours: 4          # Auto-destroy VMs after this many hours
+  
+  # Scenarios requiring manual approval before execution
+  require_approval:
+    - ransomware
+    - wiper
+    - destructive
+    - supply_chain
+  
+  # Additional commands to block (beyond built-in blocklist)
+  additional_blocked_commands:
+    - "custom-dangerous-command"
+
+# VM Templates
+# ============
+# Map template names to Proxmox VM IDs.
+# Create these templates in Proxmox before use.
+templates:
+  ubuntu-attacker:
+    vmid: 9000
+    description: Ubuntu 24.04 with security tools
+    cpu_cores: 4
+    memory_mb: 8192
+    default_user: root
+    default_password: threatsimgpt
+    tools:
+      - nmap
+      - metasploit
+      - gobuster
+      - nuclei
+      - hydra
+      - sqlmap
+      - john
+      - hashcat
+  
+  ubuntu-target:
+    vmid: 9001
+    description: Ubuntu 24.04 vulnerable target
+    cpu_cores: 2
+    memory_mb: 4096
+    default_user: admin
+    default_password: vulnerable123
+  
+  windows-target:
+    vmid: 9002
+    description: Windows 11 vulnerable target
+    cpu_cores: 2
+    memory_mb: 4096
+    default_user: admin
+    default_password: vulnerable123
+  
+  network-monitor:
+    vmid: 9003
+    description: Network monitoring and logging
+    cpu_cores: 2
+    memory_mb: 2048
+    default_user: root
+    default_password: monitor123

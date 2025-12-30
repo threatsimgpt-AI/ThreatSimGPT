@@ -1,0 +1,52 @@
+# ThreatSimGPT RAG Configuration
+# ================================
+
+# Embedding settings
+embedding:
+  model: "text-embedding-3-small"
+  dimensions: 1536
+  batch_size: 100
+  cache_embeddings: true
+
+# Vector store settings (Neo4j - Graph-Enhanced)
+vectorstore:
+  store_type: "neo4j"
+  host: "localhost"
+  port: 7687
+  database: "neo4j"
+  collection_name: "threatsimgpt_intelligence"
+  distance_metric: "cosine"
+  use_graph_context: true  # Enable graph-enhanced search
+
+# Retrieval settings
+retrieval:
+  top_k: 10
+  semantic_weight: 0.7
+  keyword_weight: 0.3
+  use_reranker: false
+
+# Generation settings
+generation:
+  provider: "openai"
+  model: "gpt-4-turbo"
+  temperature: 0.3
+  max_tokens: 4000
+  include_citations: true
+
+# Intelligence sources
+sources:
+  - name: "MITRE ATT&CK"
+    source_type: "mitre_attack"
+    enabled: true
+    
+  - name: "NIST NVD"
+    source_type: "nist_nvd"
+    enabled: true
+    
+  - name: "CISA Advisories"
+    source_type: "cisa_advisory"
+    enabled: true
+
+# Scheduling
+auto_refresh: false
+refresh_interval_hours: 24

@@ -1,9 +1,9 @@
-# ThreatGPT User Guide
+# ThreatSimGPT User Guide
 
 **Version:** 1.0.0  
 **Last Updated:** November 2025
 
-Complete guide for installing, configuring, and using ThreatGPT for threat simulation and security training.
+Complete guide for installing, configuring, and using ThreatSimGPT for threat simulation and security training.
 
 ---
 
@@ -30,8 +30,8 @@ Complete guide for installing, configuring, and using ThreatGPT for threat simul
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/Thundastormgod/ThreatGpt.git
-cd ThreatGpt
+git clone https://github.com/threatsimgpt-AI/ThreatSimGPT.git
+cd ThreatSimGPT
 ```
 
 ### Step 2: Create Virtual Environment
@@ -70,8 +70,8 @@ export ANTHROPIC_API_KEY="your-api-key-here"
 ### Step 5: Verify Installation
 
 ```bash
-python3 -m threatgpt --version
-python3 -m threatgpt templates list
+python3 -m threatsimgpt --version
+python3 -m threatsimgpt templates list
 ```
 
 ---
@@ -86,7 +86,7 @@ source .venv/bin/activate  # macOS/Linux
 .\.venv\Scripts\Activate.ps1  # Windows
 
 # Run a phishing simulation
-python3 -m threatgpt simulate -s templates/executive_phishing.yaml
+python3 -m threatsimgpt simulate -s templates/executive_phishing.yaml
 
 # View generated content
 ls generated_content/
@@ -96,10 +96,10 @@ ls generated_content/
 
 ```bash
 # Dry run validates configuration without LLM calls
-python3 -m threatgpt simulate -s templates/executive_phishing.yaml --dry-run
+python3 -m threatsimgpt simulate -s templates/executive_phishing.yaml --dry-run
 
 # Preview scenario details
-python3 -m threatgpt simulate -s templates/finance_bec.yaml --preview
+python3 -m threatsimgpt simulate -s templates/finance_bec.yaml --preview
 ```
 
 ---
@@ -108,7 +108,7 @@ python3 -m threatgpt simulate -s templates/finance_bec.yaml --preview
 
 ### Configuration File: `config.yaml`
 
-ThreatGPT uses `config.yaml` for system configuration:
+ThreatSimGPT uses `config.yaml` for system configuration:
 
 ```yaml
 llm:
@@ -133,7 +133,7 @@ llm:
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "logs/threatgpt.log"
+  file: "logs/threatsimgpt.log"
 
 content:
   output_directory: "generated_content"
@@ -147,8 +147,8 @@ Override config with environment variables:
 
 ```bash
 export OPENROUTER_API_KEY="sk-or-v1-..."
-export THREATGPT_LOG_LEVEL="DEBUG"
-export THREATGPT_OUTPUT_DIR="./my_output"
+export THREATSIMGPT_LOG_LEVEL="DEBUG"
+export THREATSIMGPT_OUTPUT_DIR="./my_output"
 ```
 
 ---
@@ -160,7 +160,7 @@ export THREATGPT_OUTPUT_DIR="./my_output"
 Available for all commands:
 
 ```bash
-python3 -m threatgpt [OPTIONS] COMMAND [ARGS]
+python3 -m threatsimgpt [OPTIONS] COMMAND [ARGS]
 
 Options:
   --version           Show version and exit
@@ -174,7 +174,7 @@ Options:
 #### Run Simulation
 
 ```bash
-python3 -m threatgpt simulate [OPTIONS]
+python3 -m threatsimgpt simulate [OPTIONS]
 
 Options:
   -s, --scenario PATH     Scenario template file (required)
@@ -185,13 +185,13 @@ Options:
 
 Examples:
   # Basic execution
-  python3 -m threatgpt simulate -s templates/executive_phishing.yaml
+  python3 -m threatsimgpt simulate -s templates/executive_phishing.yaml
   
   # Dry run
-  python3 -m threatgpt simulate -s templates/finance_bec.yaml --dry-run
+  python3 -m threatsimgpt simulate -s templates/finance_bec.yaml --dry-run
   
   # JSON output
-  python3 -m threatgpt simulate -s templates/it_helpdesk.yaml -o json
+  python3 -m threatsimgpt simulate -s templates/it_helpdesk.yaml -o json
 ```
 
 ### Template Commands
@@ -199,39 +199,39 @@ Examples:
 #### List Templates
 
 ```bash
-python3 -m threatgpt templates list
+python3 -m threatsimgpt templates list
 
 # List with validation
-python3 -m threatgpt templates list --validate
+python3 -m threatsimgpt templates list --validate
 
 # Tree format
-python3 -m threatgpt templates list --format tree
+python3 -m threatsimgpt templates list --format tree
 ```
 
 #### Show Template Details
 
 ```bash
-python3 -m threatgpt templates show TEMPLATE_NAME
+python3 -m threatsimgpt templates show TEMPLATE_NAME
 
 # Example
-python3 -m threatgpt templates show executive_phishing
+python3 -m threatsimgpt templates show executive_phishing
 ```
 
 #### Validate Templates
 
 ```bash
 # Validate single template
-python3 -m threatgpt templates show executive_phishing --validate
+python3 -m threatsimgpt templates show executive_phishing --validate
 
 # Validate all templates
-python3 -m threatgpt templates validate-all
+python3 -m threatsimgpt templates validate-all
 ```
 
 #### Create Template
 
 ```bash
 # Copy existing template
-python3 -m threatgpt templates copy executive_phishing.yaml my_phishing.yaml
+python3 -m threatsimgpt templates copy executive_phishing.yaml my_phishing.yaml
 
 # Edit the new template
 nano templates/my_phishing.yaml
@@ -242,19 +242,19 @@ nano templates/my_phishing.yaml
 #### Test LLM Providers
 
 ```bash
-python3 -m threatgpt llm test-providers
+python3 -m threatsimgpt llm test-providers
 
 # Test specific provider
-python3 -m threatgpt llm test-providers --provider openrouter
+python3 -m threatsimgpt llm test-providers --provider openrouter
 ```
 
 #### Generate Content
 
 ```bash
-python3 -m threatgpt llm generate templates/executive_phishing.yaml
+python3 -m threatsimgpt llm generate templates/executive_phishing.yaml
 
 # Specify content type
-python3 -m threatgpt llm generate \
+python3 -m threatsimgpt llm generate \
     --content-type email_phishing \
     templates/executive_phishing.yaml
 ```
@@ -264,10 +264,10 @@ python3 -m threatgpt llm generate \
 #### Query Threat Intelligence
 
 ```bash
-python3 -m threatgpt intel query "phishing techniques"
+python3 -m threatsimgpt intel query "phishing techniques"
 
 # Get MITRE ATT&CK mapping
-python3 -m threatgpt intel mitre T1566.001
+python3 -m threatsimgpt intel mitre T1566.001
 ```
 
 ### Deployment Commands
@@ -275,13 +275,13 @@ python3 -m threatgpt intel mitre T1566.001
 #### Start API Server
 
 ```bash
-python3 -m threatgpt deploy start-api
+python3 -m threatsimgpt deploy start-api
 
 # Custom port
-python3 -m threatgpt deploy start-api --port 8080
+python3 -m threatsimgpt deploy start-api --port 8080
 
 # With workers
-python3 -m threatgpt deploy start-api --workers 4
+python3 -m threatsimgpt deploy start-api --workers 4
 ```
 
 ---
@@ -345,7 +345,7 @@ behavioral_pattern:
 
 5. **Validate:**
    ```bash
-   python3 -m threatgpt templates show my_scenario --validate
+   python3 -m threatsimgpt templates show my_scenario --validate
    ```
 
 ### Available Templates
@@ -389,7 +389,7 @@ behavioral_pattern:
 
 ### "Command Not Found"
 
-**Problem:** `threatgpt: command not found`
+**Problem:** `threatsimgpt: command not found`
 
 **Solution:** Activate virtual environment
 ```bash
@@ -404,10 +404,10 @@ source .venv/bin/activate  # macOS/Linux
 **Solution:** Use full path from project root
 ```bash
 # Correct
-python3 -m threatgpt simulate -s templates/executive_phishing.yaml
+python3 -m threatsimgpt simulate -s templates/executive_phishing.yaml
 
 # Wrong
-python3 -m threatgpt simulate -s executive_phishing.yaml
+python3 -m threatsimgpt simulate -s executive_phishing.yaml
 ```
 
 ### "API Authentication Error"
@@ -419,7 +419,7 @@ python3 -m threatgpt simulate -s executive_phishing.yaml
 export OPENROUTER_API_KEY="your-key-here"
 
 # Verify
-python3 -m threatgpt llm test-providers
+python3 -m threatsimgpt llm test-providers
 ```
 
 ### Template Validation Errors
@@ -429,7 +429,7 @@ python3 -m threatgpt llm test-providers
 **Solution:** Check validation output
 ```bash
 # See detailed errors
-python3 -m threatgpt templates show my_template --validate
+python3 -m threatsimgpt templates show my_template --validate
 
 # Common issues:
 # - Missing required fields
@@ -449,10 +449,10 @@ python3 -m threatgpt templates show my_template --validate
 
 ```bash
 # Test provider
-python3 -m threatgpt llm test-providers
+python3 -m threatsimgpt llm test-providers
 
 # Use dry-run to test template
-python3 -m threatgpt simulate -s template.yaml --dry-run
+python3 -m threatsimgpt simulate -s template.yaml --dry-run
 ```
 
 ### "ModuleNotFoundError"
@@ -468,7 +468,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Verify
-pip list | grep threatgpt
+pip list | grep threatsimgpt
 ```
 
 ---
@@ -484,6 +484,6 @@ pip list | grep threatgpt
 
 ## Support
 
-- **GitHub Issues:** https://github.com/Thundastormgod/ThreatGpt/issues
-- **Email:** okino007@gmail.com
+- **GitHub Issues:** https://github.com/threatsimgpt-AI/ThreatSimGPT/issues
+- **Email:** threatsimgpt@hotmail.com
 - **Documentation:** Project README.md

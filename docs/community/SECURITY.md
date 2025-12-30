@@ -3,12 +3,12 @@
 >**IMPORTANT: Do NOT use GitHub Issues for security vulnerabilities**
 
 Instead, please report security vulnerabilities to:
-- **Email**: thecommodore30@gmail.com
-- **Subject**: `[SECURITY] ThreatGPT Vulnerability Report` For comprehensive security documentation, see [SECURITY_GUIDE.md](SECURITY_GUIDE.md)**
+- **Email**: security@threatsimgpt.com
+- **Subject**: `[SECURITY] ThreatSimGPT Vulnerability Report` For comprehensive security documentation, see [SECURITY_GUIDE.md](SECURITY_GUIDE.md)**
 
 ## Supported Versions
 
-We provide security updates for the following versions of ThreatGPT:
+We provide security updates for the following versions of ThreatSimGPT:
 
 | Version | Supported          | End of Support |
 | ------- | ------------------ | -------------- |
@@ -18,15 +18,15 @@ We provide security updates for the following versions of ThreatGPT:
 
 ## Reporting a Vulnerability
 
-The ThreatGPT team takes security seriously. We appreciate your efforts to responsibly disclose your findings.
+The ThreatSimGPT team takes security seriously. We appreciate your efforts to responsibly disclose your findings.
 
 ### How to Report
 
 **⚠️ IMPORTANT: Do NOT use GitHub Issues for security vulnerabilities**
 
 Instead, please report security vulnerabilities to:
-- **Email**: thecommodore30@gmail.com
-- **Subject**: `[SECURITY] ThreatGPT Vulnerability Report`
+- **Email**: security@threatsimgpt.com
+- **Subject**: `[SECURITY] ThreatSimGPT Vulnerability Report`
 
 ### What to Include
 
@@ -48,7 +48,7 @@ Please include the following information in your security report:
 
 ### Security Measures
 
-ThreatGPT implements several security measures:
+ThreatSimGPT implements several security measures:
 
 #### Code Security
 - Static code analysis with Bandit
@@ -115,11 +115,11 @@ We will not pursue legal action against security researchers who:
 
 ### Recognition
 
-We believe in recognizing security researchers who help improve ThreatGPT:
+We believe in recognizing security researchers who help improve ThreatSimGPT:
 
 - **Hall of Fame**: Recognition in our security acknowledgments
 - **Credits**: Listed in release notes and documentation
-- **Swag**: ThreatGPT merchandise for significant findings
+- **Swag**: ThreatSimGPT merchandise for significant findings
 
 ### Security Updates
 
@@ -132,7 +132,7 @@ When security updates are released:
 
 ### Best Practices for Users
 
-To use ThreatGPT securely:
+To use ThreatSimGPT securely:
 
 #### API Keys
 - Store API keys in environment variables
@@ -147,7 +147,7 @@ To use ThreatGPT securely:
 - Implement proper content filtering
 
 #### Infrastructure
-- Keep ThreatGPT updated to latest version
+- Keep ThreatSimGPT updated to latest version
 - Monitor for security advisories
 - Use secure hosting environments
 - Implement proper access controls
@@ -160,7 +160,7 @@ To use ThreatGPT securely:
 
 ### Compliance
 
-ThreatGPT is designed to comply with:
+ThreatSimGPT is designed to comply with:
 - GDPR (General Data Protection Regulation)
 - CCPA (California Consumer Privacy Act)
 - SOC 2 principles
@@ -169,10 +169,10 @@ ThreatGPT is designed to comply with:
 ### Contact Information
 
 For security-related questions:
-- **Security Email**: thecommodore30@gmail.com
-- **General Issues**: [GitHub Issues](https://github.com/Thundastormgod/ThreatGpt/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Thundastormgod/ThreatGpt/discussions)
+- **Security Email**: security@threatsimgpt.com
+- **General Issues**: [GitHub Issues](https://github.com/threatsimgpt-AI/ThreatSimGPT/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/threatsimgpt-AI/ThreatSimGPT/discussions)
 
 ---
 
-**Note**: This security policy applies only to the ThreatGPT codebase. For security issues with dependencies or third-party services, please report to the respective maintainers.
+**Note**: This security policy applies only to the ThreatSimGPT codebase. For security issues with dependencies or third-party services, please report to the respective maintainers.

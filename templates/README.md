@@ -1,6 +1,6 @@
-# ThreatGPT Scenario Templates
+# ThreatSimGPT Scenario Templates
 
-This directory contains example threat scenario configurations demonstrating the full capabilities of the ThreatGPT YAML schema.
+This directory contains example threat scenario configurations demonstrating the full capabilities of the ThreatSimGPT YAML schema.
 
 ## Template Categories
 
@@ -28,8 +28,8 @@ This directory contains example threat scenario configurations demonstrating the
 
 ## Usage
 
-1. **Validation**: Use `threatgpt validate <template.yaml>` to check schema compliance
-2. **Simulation**: Use `threatgpt simulate <template.yaml>` to run the scenario
+1. **Validation**: Use `threatsimgpt validate <template.yaml>` to check schema compliance
+2. **Simulation**: Use `threatsimgpt simulate <template.yaml>` to run the scenario
 3. **Customization**: Copy and modify templates for your specific organization
 
 ## Schema Features Demonstrated
@@ -47,8 +47,8 @@ Each template showcases different aspects of the YAML schema:
 ### Quick Start
 1. **Copy Sample Template**: `cp templates/sample_phishing_template.yaml templates/my_template.yaml`
 2. **Modify for Your Needs**: Edit the required fields
-3. **Validate**: `threatgpt simulate --dry-run -s templates/my_template.yaml`
-4. **Test**: `threatgpt simulate -s templates/my_template.yaml`
+3. **Validate**: `threatsimgpt simulate --dry-run -s templates/my_template.yaml`
+4. **Test**: `threatsimgpt simulate -s templates/my_template.yaml`
 
 ### Documentation
 - **TEMPLATE_CREATION_GUIDE.md** - Complete template creation guide with examples

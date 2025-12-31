@@ -18,6 +18,9 @@ from threatsimgpt.core.models import ThreatScenario, SimulationResult, ThreatTyp
 from threatsimgpt.core.simulator import ThreatSimulator
 from threatsimgpt.llm.manager import LLMManager
 
+# Import API routers
+from threatsimgpt.api.routers import manuals_router, knowledge_router
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -64,6 +67,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(manuals_router, prefix="/api")
+app.include_router(knowledge_router, prefix="/api")
 
 
 # Pydantic models for API

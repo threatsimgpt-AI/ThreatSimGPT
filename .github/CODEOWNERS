@@ -18,19 +18,19 @@
 
 # -----------------------------------------------------------------------------
 # Core System - Backend Development
-# Maintainer: Jibo (TSG-DEV)
-# Email: ajiboyshokunbi@yahoo.com
+# Maintainers: Jibo, Lara (TSG-DEV) - Co-Core Software Developers
+# Emails: ajiboyshokunbi@yahoo.com, @laradipupo
 # -----------------------------------------------------------------------------
-/threatsimgpt/core/ @Thundastormgod
-/threatsimgpt/config/ @Thundastormgod
-/threatsimgpt/api/ @Thundastormgod
+/threatsimgpt/core/ @Thundastormgod @laradipupo
+/threatsimgpt/config/ @Thundastormgod @laradipupo
+/threatsimgpt/api/ @Thundastormgod @laradipupo
 
 # -----------------------------------------------------------------------------
 # CLI Interface
-# Maintainer: Jibo (TSG-DEV)
-# Email: ajiboyshokunbi@yahoo.com
+# Maintainers: Jibo, Lara (TSG-DEV) - Co-Core Software Developers
+# Emails: ajiboyshokunbi@yahoo.com, @laradipupo
 # -----------------------------------------------------------------------------
-/threatsimgpt/cli/ @Thundastormgod
+/threatsimgpt/cli/ @Thundastormgod @laradipupo
 
 # -----------------------------------------------------------------------------
 # LLM Integration & ML/AI
@@ -58,8 +58,8 @@
 
 # -----------------------------------------------------------------------------
 # Deployment & DevOps
-# Maintainer: Lara (TSG-INTG)
-# GitHub: @laradipupo
+# Maintainers: Jibo, Lara (TSG-DEV) - Co-Core Software Developers
+# Emails: ajiboyshokunbi@yahoo.com, @laradipupo
 # -----------------------------------------------------------------------------
 /threatsimgpt/deployment/ @Thundastormgod @laradipupo
 /.github/workflows/ @Thundastormgod @laradipupo
@@ -74,9 +74,9 @@
 /threatsimgpt/datasets/ @Thundastormgod
 
 # -----------------------------------------------------------------------------
-# Platform Integrations
-# Maintainer: Lara (TSG-INTG)
-# GitHub: @laradipupo
+# Platform Integrations & MCP
+# Maintainers: Jibo, Lara (TSG-DEV) - Co-Core Software Developers
+# Emails: ajiboyshokunbi@yahoo.com, @laradipupo
 # -----------------------------------------------------------------------------
 /threatsimgpt/mcp/ @Thundastormgod @laradipupo
 /threatsimgpt/vm/ @Thundastormgod @laradipupo
@@ -104,10 +104,10 @@
 
 # -----------------------------------------------------------------------------
 # Tests & Quality Assurance
-# Maintainer: Jibo (TSG-DEV)
-# Email: ajiboyshokunbi@yahoo.com
+# Maintainers: Jibo, Lara (TSG-DEV) - Co-Core Software Developers
+# Emails: ajiboyshokunbi@yahoo.com, @laradipupo
 # -----------------------------------------------------------------------------
-/tests/ @Thundastormgod
+/tests/ @Thundastormgod @laradipupo
 
 # -----------------------------------------------------------------------------
 # Configuration Files
@@ -119,16 +119,16 @@
 # =============================================================================
 # CORE TEAM CONTACT REFERENCE
 # =============================================================================
-# Maintainer      | Role           | Code     | Email/GitHub
-# ----------------|----------------|----------|---------------------------
-# Temi            | Red Team       | TSG-RED  | noblenabeela360@gmail.com
-# Olabisi         | Red Team       | TSG-RED  | bayulus4great@gmail.com
-# David           | Blue Team      | TSG-BLUE | onojad@gmail.com
-# Jibo            | Backend Dev    | TSG-DEV  | ajiboyshokunbi@yahoo.com
-# Lanre           | AI/ML Lead     | TSG-ML   | hr.lanreshittu@yahoo.com
-# Jerry           | Compliance     | TSG-COMP | @Okino007
-# Lara            | Integration    | TSG-INTG | @laradipupo
-# TBD             | Documentation  | TSG-DOCS | TBD
+# Maintainer      | Role              | Code     | Email/GitHub
+# ----------------|-------------------|----------|---------------------------
+# Temi            | Red Team          | TSG-RED  | noblenabeela360@gmail.com
+# Olabisi         | Red Team          | TSG-RED  | bayulus4great@gmail.com
+# David           | Blue Team         | TSG-BLUE | onojad@gmail.com
+# Jibo            | Co-Core Dev       | TSG-DEV  | ajiboyshokunbi@yahoo.com
+# Lara            | Co-Core Dev       | TSG-DEV  | @laradipupo
+# Lanre           | AI/ML Lead        | TSG-ML   | hr.lanreshittu@yahoo.com
+# Jerry           | Compliance        | TSG-COMP | @Okino007
+# TBD             | Documentation     | TSG-DOCS | TBD
 # =============================================================================
 
 # =============================================================================
@@ -136,9 +136,8 @@
 # =============================================================================
 # RED Team (Temi, Olabisi): TSG-RED-001 to TSG-RED-008 - Safety, Templates
 # BLUE Team (David): TSG-BLUE-001 to TSG-BLUE-008 - Analytics, Intelligence
-# Backend (Jibo): TSG-DEV-001 to TSG-DEV-008 - Core, API, CLI
+# Co-Core Dev (Jibo, Lara): TSG-DEV-001 to TSG-DEV-016 - Core, API, CLI, MCP, Tests
 # AI/ML Lead (Lanre): TSG-ML-001 to TSG-ML-008 - LLM, RAG, Embeddings
 # Compliance (Jerry): TSG-COMP-001 to TSG-COMP-008 - Feedback, Audit
-# Integration (Lara): TSG-INTG-001 to TSG-INTG-008 - MCP, VM, Deployment
 # Docs (TBD): TSG-DOCS-001 to TSG-DOCS-008 - Documentation
 # =============================================================================

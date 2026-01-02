@@ -1,472 +1,99 @@
-# Byte-compiled / optimized / DLL files
+# ============================================================================
+# ThreatSimGPT - Simplified .gitignore
+# ============================================================================
+# Policy: All unofficial documents and dev files go in /dev/ folder
+# ============================================================================
+
+# =========================
+# DEV FOLDER (ALL UNOFFICIAL DOCS)
+# =========================
+/dev/
+
+# =========================
+# PYTHON STANDARD IGNORES
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+.installed.cfg
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# =========================
+# ENVIRONMENTS
+# =========================
+.env
+.venv/
+venv/
+env/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
+# =========================
+# TESTING & COVERAGE
+# =========================
 htmlcov/
-.tox/
-.nox/
 .coverage
 .coverage.*
-.cache
-nosetests.xml
 coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
 .pytest_cache/
-cover/
+.tox/
+.nox/
+.ruff_cache/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
-.pdm.toml
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be added to the global gitignore or merged into this project gitignore.  For a PyCharm
-#  project, it is generally recommended to include not ignore the following files:
-#  idea/workspace.xml and idea/tasks.xml
+# =========================
+# IDE & EDITORS
+# =========================
 .idea/
-
-# VSCode
 .vscode/
-*.code-workspace
-
-# Sublime Text
-*.sublime-project
-*.sublime-workspace
-
-# Vim
 *.swp
 *.swo
 *~
-
-# macOS
 .DS_Store
-.AppleDouble
-.LSOverride
 
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Linux
-*~
-
-# ThreatSimGPT specific
+# =========================
+# LOGS & DATA
+# =========================
 *.log
 logs/
 data/
 temp/
+tmp/
 .cache/
-simulation_results/
 reports/
-docs_archive/
+output/
+models/
 
-# AI Detection and Analysis
-*_DETECTION.md
-*_detection_*.md
-AI_DETECTION_*.md
-detection_results/
-detection_reports/
-ai_detection/
-.detection/
-detection/
-
-# Development and Refactoring Documentation
-/dev
-PHASE*.md
-*_PHASE*.md
-REFACTORING_*.md
-DUPLICATION_*.md
-AI_SYNTAX_*.md
-AI_MARKDOWN_*.md
-EMOJI_*.md
-*_COMPLETE.md
-*_PROGRESS.md
-*_ROADMAP.md
-*_ANALYSIS.md
-*_DETECTION_*.md
-*_REPORT.md
-ADVANCED_PROMPT_ENGINEERING.md
-HUGGINGFACE_TRANSFORMERS_GUIDE.md
-LOCAL_MODEL_INTEGRATION_GUIDE.md
-DOCKER_QUICK_REFERENCE.txt
-
-# Test and debug files
-test_*.py
-*_test.py
-complete_*.py
-test_results.json
-debug_*.json
-
-# Backup and old files
-README_OLD.md
-*_OLD.md
-*.backup
-*.bak
-
-# Debug and test files (should not be in production)
-debug_*.py
-test_*.py
-demo_*.py
-*_debug.py
-*_test.py
-test_*.yaml
-test_*.yml
-**/test_*
-**/debug_*
-**/demo_*
-
-# Cleanup and utility scripts
-cleanup_*.sh
-*_cleanup.sh
-clean_*.sh
-setup_*.sh
-check_*.sh
-*_manage.sh
-quick_*.py
-*_diagnostic.py
-
-# ============================================================================
-# LOCAL DEMO SCRIPTS (Not for version control)
-# ============================================================================
-# These demo scripts are for local presentations and testing only
-scripts/demo_launcher.sh
-scripts/full_showcase_demo.sh
-scripts/content_generation_demo.sh
-scripts/team_demo.sh
-scripts/enterprise_simulation.sh
-scripts/team_onboard.sh
-scripts/team_demo_interactive.py
-scripts/team_demo_presentation.py
-scripts/team_task_demo.py
-scripts/create_github_issues.py
-scripts/DEMO_README.md
-scripts/vm_setup/
-
-# ============================================================================
-# PRIVATE ONBOARDING & HR DOCUMENTS
-# ============================================================================
-docs/onboarding/
-docs/DAVID_ONBOARDING.md
-docs/*_ONBOARDING.md
-*_onboarding.md
-
-# Debug and test files (should not be in production)
-debug_*.py
-test_*.py
-demo_*.py
-*_debug.py
-*_test.py
-test_*.yaml
-test_*.yml
-**/test_*
-**/debug_*
-**/demo_*
-
-# Personal development directory (separate private repo)
-personal_dev/
-
-# Configuration files with secrets
+# =========================
+# SECRETS & LOCAL CONFIG
+# =========================
 config/local.yaml
 config/production.yaml
 .env.local
 .env.production
+k8s/secrets/
 
-# ============================================================================
-# DOCUMENTATION POLICY - Enterprise Standards
-# ============================================================================
-# Only professional, enterprise-standard documentation is allowed in the repo
-# All development notes, guides, and internal docs must be gitignored
-#
-# ALLOWED DOCUMENTATION (Enterprise Standard):
-#   - README.md              - Project overview and quick start
-#   - API_DOCUMENTATION.md   - REST API reference 
-#   - USER_GUIDE.md          - Comprehensive usage guide
-#   - DEVELOPER_GUIDE.md     - Contributing and development guide
-#   - CONFIGURATION_REFERENCE.md - Configuration schema documentation
-#   - SECURITY_GUIDE.md      - Security best practices
-#   - CONTRIBUTING.md        - Contribution guidelines
-#   - CODE_OF_CONDUCT.md     - Community standards
-#   - LICENSE                - Project license
-#
-# All other markdown files are excluded from version control
-# ============================================================================
-
-# Exclude all markdown files by default
-*.md
-
-# Allow only enterprise-standard documentation
-!README.md
-!SECURITY.md
-# Keep architecture and deployment docs for team
-!TECHNICAL_ARCHITECTURE.md
-!PRODUCTION_PLAN.md
-!ARCHITECTURE_OVERVIEW.md
-!API_USAGE.md
-!CONTENT_STORAGE_GUIDE.md
-!DATASET_INTEGRATION.md
-# Essential template documentation for users
-!TEMPLATE_CREATION_GUIDE.md
-!TEMPLATE_MANUAL.md
-!TEMPLATE_QUICK_REFERENCE.md
-!TEMPLATE_VALIDATION_GUIDE.md
-# CLI Reference
-!CLI_REFERENCE.md
-# Quick Start Guide
-!QUICK_START.md
-# Install Guide
-!INSTALL.md
-# Contributing and Code of Conduct
-!CONTRIBUTING.md
-!CODE_OF_CONDUCT.md
-# Private repository setup guide
-!SETUP_PRIVATE_REPO.md
-
-# ============================================================================
-# DOCS FOLDER - Selective Allowlist
-# ============================================================================
-# Only allow official, user-facing documentation in docs/
-# Internal planning, team docs, and onboarding are excluded
-
-# First, ignore everything in docs/reference/ 
-docs/reference/*
-
-# Then allow ONLY the configuration reference
-!docs/reference/CONFIGURATION_REFERENCE.md
-
-# Ignore all internal docs at docs/ root level
-docs/AI_INTEGRATION_GUIDE.md
-docs/DEMO_PRESENTER_NOTES.md
-docs/ENV_HANDLING_AUDIT.md
-docs/TEAM_ROLES_ANALYSIS.md
-docs/TEAM_WORKFLOWS.md
-docs/USER_GUIDE.md
-
-# EXCLUDE onboarding (private HR docs)
-docs/onboarding/
-
-# Allow official API documentation
-!docs/api/API_DOCUMENTATION.md
-
-# Allow community documentation
-!docs/community/CODE_OF_CONDUCT.md
-!docs/community/CONTRIBUTING.md
-!docs/community/SECURITY.md
-
-# Allow user-facing guides
-!docs/guides/DEVELOPER_GUIDE.md
-!docs/guides/SECURITY_GUIDE.md
-!docs/guides/USER_GUIDE.md
-
-# Allow docs README
-!docs/README.md
-
-# Allow README files in subdirectories (templates/, generated_content/, etc.)
-!**/README.md
-
-# ============================================================================
-# INTERNAL PLANNING DOCUMENTS (Local Only - NOT for org repo)
-# ============================================================================
-# Team issue assignments - use for creating GitHub issues, then keep local
-ISSUES_ASSIGNMENTS.md
-# Push checklist - internal reference only
-PUSH_CHECKLIST.md
-
-# Onboarding zip packages (for distribution only, not version control)
-*_Onboarding_Package.zip
-ThreatSimGPT_Onboarding_Package.zip
-onboarding_packages/
-*_Onboarding.zip
-
-# Emoji removal script (temp utility)
-remove_emojis.py
-
-# Database files
+# =========================
+# DATABASE
+# =========================
 *.db
 *.sqlite
 *.sqlite3
-
-# Redis dump
 dump.rdb
 
-# Docker
-.dockerignore
+# =========================
+# DEPRECATED STRUCTURE
+# =========================
+src/
+docs_archive/
 
-# Kubernetes secrets
-k8s/secrets/
-
-# Temporary files
-tmp/
-temp/
+# =========================
+# MISC
+# =========================
 *.tmp
 *.temp
-
-# ============================================================================
-# MAINTAINER ONBOARDING - LOCAL ONLY (HR/Internal Documents)
-# ============================================================================
-# These are internal HR and team documents that should NOT be pushed to
-# the public organizational repository. Keep these local for team use only.
-MAINTAINER_ONBOARDING/
-*_ONBOARDING.md
-*_MAINTAINER.md
-
-# Core Maintainer Roles PDF (internal HR document)
-Core Maintainer Roles*.pdf
-
-# ============================================================================
-# LAUNCH PREPARATION FILES - LOCAL ONLY
-# ============================================================================
-# These are internal preparation documents used during launch
-launch_report*.txt
-LAUNCH_READINESS_REVIEW.md
-
-# Pre-push validation scripts (local development tools)
-scripts/pre_push_check.sh
-scripts/prepare_push.py
-scripts/prepare_for_launch.py
-scripts/allocate_issues.py
-
-# ============================================================================
-# OLD/DEPRECATED DIRECTORY STRUCTURE
-# ============================================================================
-# These directories contain old code that is being phased out
-src/
-
-# Onboarding packages (distributed separately)
-onboarding_packages/
-*_Onboarding_Package.zip
-ThreatSimGPT_Onboarding_Package.zip
+*.backup
+*.bak
+*.zip

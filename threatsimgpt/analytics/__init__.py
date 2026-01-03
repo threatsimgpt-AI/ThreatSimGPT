@@ -8,14 +8,24 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, Field
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+
+# Lazy-load ML dependencies (only needed for ML analytics, not detection rules)
+# This allows detection_rules submodule to work without sklearn
+try:
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    RandomForestClassifier = None
+    KMeans = None
+    StandardScaler = None
 
 
 class AnalyticsEventType(str, Enum):

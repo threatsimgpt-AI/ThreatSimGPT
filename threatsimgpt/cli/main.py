@@ -16,6 +16,7 @@ from threatsimgpt import __version__
 from .templates import templates
 from .llm import llm_group
 from .logs import logs as logs_group
+from .detect import detect_group
 
 # Load environment variables from .env file
 load_dotenv()
@@ -677,6 +678,9 @@ cli.add_command(rag_group, name="rag")
 # Add Feedback Loop commands
 from .feedback import feedback_cli
 cli.add_command(feedback_cli, name="feedback")
+
+# Add Detection Rule Generator commands (Issue #25 - Blue Team)
+cli.add_command(detect_group, name="detect")
 
 
 def main() -> int:

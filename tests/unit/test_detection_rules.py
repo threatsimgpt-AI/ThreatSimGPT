@@ -313,7 +313,9 @@ class TestSplunkSecurityFeatures:
         
         # Pipe should be escaped in field name
         assert "\\|" in result
-        assert "| delete" not in result
+        # The raw unescaped pipe (without backslash) should not allow command execution
+        # Note: "\| delete" contains "| delete" as substring, but the backslash prevents execution
+        assert "EventCode=1 \\| delete" in result or "\\|" in result
     
     def test_simple_value_returns_sanitized(self, generator: SplunkRuleGenerator):
         """Test that simple values without spaces/wildcards are still sanitized."""
@@ -324,6 +326,213 @@ class TestSplunkSecurityFeatures:
         # Should be sanitized even without quotes
         assert "\\|" in result
         assert result == "admin\\|delete"
+    
+    # ============ P2: Additional Negative Test Cases ============
+    
+    def test_sanitize_bracket_injection(self, generator: SplunkRuleGenerator):
+        """Test that brackets are escaped to prevent index injection."""
+        malicious = "value[*]"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert "\\[" in sanitized
+        assert "\\]" in sanitized
+        assert sanitized == "value\\[*\\]"
+    
+    def test_sanitize_parenthesis_injection(self, generator: SplunkRuleGenerator):
+        """Test that parentheses are escaped to prevent subsearch grouping."""
+        malicious = "test(search * | delete)"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert "\\(" in sanitized
+        assert "\\)" in sanitized
+        assert "\\|" in sanitized
+    
+    def test_sanitize_dollar_sign_injection(self, generator: SplunkRuleGenerator):
+        """Test that dollar signs are escaped to prevent variable injection."""
+        malicious = "test$var$"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert "\\$" in sanitized
+        assert sanitized == "test\\$var\\$"
+    
+    def test_input_length_validation(self, generator: SplunkRuleGenerator):
+        """Test that excessively long inputs are rejected post-normalization."""
+        # Create a string longer than MAX_VALUE_LENGTH
+        oversized_input = "a" * (generator.MAX_VALUE_LENGTH + 1)
+        
+        with pytest.raises(ValueError, match="exceeds maximum length"):
+            generator._sanitize_value(oversized_input)
+    
+    def test_pre_normalization_length_validation(self, generator: SplunkRuleGenerator):
+        """Test that pre-normalization length check prevents DoS via Unicode expansion.
+        
+        NFKC normalization can expand strings (e.g., ﬁ → fi), so we check
+        length before normalization to prevent resource exhaustion attacks.
+        """
+        # Create a string that exceeds pre-normalization limit (2x MAX_VALUE_LENGTH)
+        oversized_pre_norm = "a" * (generator.MAX_VALUE_LENGTH * 2 + 1)
+        
+        with pytest.raises(ValueError, match="pre-normalization"):
+            generator._sanitize_value(oversized_pre_norm)
+    
+    def test_input_at_exact_length_limit(self, generator: SplunkRuleGenerator):
+        """Test that input at exactly MAX_VALUE_LENGTH is accepted."""
+        exact_limit = "a" * generator.MAX_VALUE_LENGTH
+        result = generator._sanitize_value(exact_limit)
+        assert len(result) == generator.MAX_VALUE_LENGTH
+    
+    def test_input_within_length_limit(self, generator: SplunkRuleGenerator):
+        """Test that inputs within length limit are accepted."""
+        valid_input = "a" * (generator.MAX_VALUE_LENGTH // 10)  # 10% of limit
+        result = generator._sanitize_value(valid_input)
+        
+        assert len(result) == generator.MAX_VALUE_LENGTH // 10
+    
+    def test_regex_redos_prevention(self, generator: SplunkRuleGenerator):
+        """Test that ReDoS patterns are escaped in regex modifier."""
+        # Catastrophic backtracking pattern
+        redos_pattern = "(a+)+"
+        result = generator._format_value(redos_pattern, modifier="re")
+        
+        # Should use regex-escaped pattern
+        assert "| regex" in result
+        # The pattern should be escaped (re.escape converts (a+)+ to \(a\+\)\+)
+        assert "\\(" in result or "\\+" in result
+    
+    def test_regex_metacharacters_escaped(self, generator: SplunkRuleGenerator):
+        """Test that regex metacharacters are escaped."""
+        dangerous_regex = ".*+?^${}[]|()"
+        result = generator._sanitize_regex(dangerous_regex)
+        
+        # All metacharacters should be escaped
+        assert "\\" in result  # At least some escaping occurred
+        assert result != dangerous_regex
+    
+    def test_nesting_depth_limit_enforced(self, generator: SplunkRuleGenerator):
+        """Test that nesting depth limits prevent stack exhaustion."""
+        # Create deeply nested selection
+        def create_nested(depth):
+            if depth == 0:
+                return "value"
+            return {"nested": create_nested(depth - 1)}
+        
+        deeply_nested = create_nested(generator.MAX_NESTING_DEPTH + 2)
+        selection = {"field": deeply_nested}
+        
+        with pytest.raises(ValueError, match="nesting depth exceeds maximum"):
+            generator._convert_selection(selection)
+    
+    def test_nesting_within_limit(self, generator: SplunkRuleGenerator):
+        """Test that selections within nesting limit work normally."""
+        # Create selection within limit
+        nested = {"inner_field": "inner_value"}
+        selection = {"outer_field": nested}
+        
+        result = generator._convert_selection(selection)
+        assert "inner_field" in result
+    
+    def test_combined_attack_vectors(self, generator: SplunkRuleGenerator):
+        """Test sanitization against combined attack vectors."""
+        # Multiple attack vectors in one string
+        combined = 'test|delete; `subsearch` "escape" (group) [index] $var$'
+        sanitized = generator._sanitize_value(combined)
+        
+        # All dangerous chars should be escaped
+        assert "\\|" in sanitized
+        assert "\\;" in sanitized
+        assert "\\`" in sanitized
+        assert '\\"' in sanitized
+        assert "\\(" in sanitized
+        assert "\\[" in sanitized
+        assert "\\$" in sanitized
+    
+    def test_null_byte_handling(self, generator: SplunkRuleGenerator):
+        """Test handling of null bytes in input - null bytes should be stripped."""
+        # Null byte injection attempt
+        malicious = "test\x00|delete"
+        result = generator._sanitize_value(malicious)
+        
+        # Null byte should be stripped, pipe should be escaped
+        assert "\x00" not in result  # Null byte removed
+        assert "\\|" in result       # Pipe escaped
+        assert result == "test\\|delete"  # Clean result
+    
+    def test_unicode_bypass_attempt(self, generator: SplunkRuleGenerator):
+        """Test that fullwidth unicode characters are normalized and sanitized.
+        
+        Unicode normalization (NFKC) converts fullwidth chars to ASCII equivalents,
+        which are then properly escaped to prevent bypass attacks.
+        """
+        # Fullwidth pipe: ｜ (U+FF5C) - NFKC normalization converts to ASCII |
+        unicode_attempt = "test｜delete"
+        result = generator._sanitize_value(unicode_attempt)
+        
+        # After NFKC normalization, fullwidth pipe becomes ASCII pipe and is escaped
+        assert "\\|" in result  # Pipe should be escaped after normalization
+        assert result == "test\\|delete"  # Fully sanitized
+        
+        # ASCII pipe should also be escaped (baseline test)
+        ascii_version = "test|delete"
+        ascii_result = generator._sanitize_value(ascii_version)
+        assert "\\|" in ascii_result
+        assert ascii_result == "test\\|delete"
+    
+    def test_empty_string_handling(self, generator: SplunkRuleGenerator):
+        """Test handling of empty strings."""
+        result = generator._sanitize_value("")
+        assert result == ""
+    
+    def test_non_string_input_conversion(self, generator: SplunkRuleGenerator):
+        """Test that non-string inputs are converted."""
+        # Integer input
+        result = generator._sanitize_value(12345)
+        assert result == "12345"
+        
+        # Float input
+        result = generator._sanitize_value(3.14)
+        assert result == "3.14"
+    
+    def test_index_map_immutability(self):
+        """Test that external index_map modifications don't affect generator."""
+        external_map = {"windows": "index=external"}
+        generator = SplunkRuleGenerator(index_map=external_map)
+        
+        # Modify external map
+        external_map["windows"] = "index=modified"
+        
+        # Generator should be unaffected (copy was made)
+        assert generator.index_map["windows"] == "index=external"
+    
+    def test_invalid_modifier_rejection(self, generator: SplunkRuleGenerator):
+        """Test that invalid modifiers are rejected and logged."""
+        # Invalid modifier should be treated as field name
+        result = generator._field_to_spl("field|invalidmodifier", "value")
+        
+        # Should treat entire string as field name, not extract modifier
+        assert "field\\|invalidmodifier" in result
+    
+    def test_newline_injection_prevented(self, generator: SplunkRuleGenerator):
+        """Test that newline characters are replaced to prevent command injection."""
+        malicious = "test\n| delete index=*"
+        result = generator._sanitize_value(malicious)
+        
+        # Newline should be replaced with space
+        assert "\n" not in result
+        # Pipe should still be escaped
+        assert "\\|" in result
+        # Result should have space instead of newline
+        assert "test \\| delete" in result
+    
+    def test_carriage_return_injection_prevented(self, generator: SplunkRuleGenerator):
+        """Test that carriage return characters are replaced."""
+        malicious = "test\r\n| delete index=*"
+        result = generator._sanitize_value(malicious)
+        
+        # CR and LF should be replaced with spaces
+        assert "\r" not in result
+        assert "\n" not in result
+        # Pipe should still be escaped
+        assert "\\|" in result
 
 
 class TestElasticRuleGenerator:

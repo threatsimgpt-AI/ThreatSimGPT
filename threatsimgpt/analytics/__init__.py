@@ -11,18 +11,19 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 
-import numpy as np
 from pydantic import BaseModel, Field
 
 # Lazy-load ML dependencies (only needed for ML analytics, not detection rules)
-# This allows detection_rules submodule to work without sklearn
+# This allows detection_rules submodule to work without sklearn/numpy
 try:
+    import numpy as np
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
-    SKLEARN_AVAILABLE = True
+    ML_AVAILABLE = True
 except ImportError:
-    SKLEARN_AVAILABLE = False
+    ML_AVAILABLE = False
+    np = None
     RandomForestClassifier = None
     KMeans = None
     StandardScaler = None
@@ -214,8 +215,12 @@ class MLAnalyticsEngine:
             print(f"Error training ML models: {e}")
             return False
 
-    def _prepare_training_data(self, data: List[Dict[str, Any]]) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare training data for ML models."""
+    def _prepare_training_data(self, data: List[Dict[str, Any]]) -> Tuple[Any, Any]:
+        """Prepare training data for ML models.
+        
+        Returns:
+            Tuple of (features: np.ndarray, labels: np.ndarray) when numpy available
+        """
 
         features = []
         labels = []

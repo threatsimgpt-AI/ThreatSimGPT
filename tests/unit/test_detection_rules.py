@@ -225,6 +225,42 @@ class TestSplunkSecurityFeatures:
     def generator(self) -> SplunkRuleGenerator:
         return SplunkRuleGenerator()
     
+    # ============ Parameterized Character Escape Tests (DRY) ============
+    
+    @pytest.mark.parametrize("char,escaped,description", [
+        ("|", "\\|", "pipe - command separator"),
+        (";", "\\;", "semicolon - command terminator"),
+        ("`", "\\`", "backtick - subsearch delimiter"),
+        ('"', '\\"', "double quote - string delimiter"),
+        ("'", "\\'", "single quote - alternate delimiter"),
+        ("[", "\\[", "open bracket - index injection"),
+        ("]", "\\]", "close bracket - index injection"),
+        ("(", "\\(", "open paren - subsearch grouping"),
+        (")", "\\)", "close paren - subsearch grouping"),
+        ("$", "\\$", "dollar sign - variable injection"),
+    ])
+    def test_sanitize_dangerous_char(self, generator: SplunkRuleGenerator, char: str, escaped: str, description: str):
+        """Test that dangerous characters are escaped to prevent injection."""
+        malicious = f"test{char}attack"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert escaped in sanitized, f"Character {description} should be escaped"
+        assert sanitized == f"test{escaped}attack"
+    
+    @pytest.mark.parametrize("char,replacement,description", [
+        ("\n", " ", "newline - command injection"),
+        ("\r", " ", "carriage return - command injection"),
+    ])
+    def test_sanitize_whitespace_char(self, generator: SplunkRuleGenerator, char: str, replacement: str, description: str):
+        """Test that whitespace control characters are replaced."""
+        malicious = f"test{char}| delete"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert char not in sanitized, f"Character {description} should be replaced"
+        assert "\\|" in sanitized  # Pipe should still be escaped
+    
+    # ============ Individual Tests (for complex scenarios) ============
+    
     def test_sanitize_pipe_injection(self, generator: SplunkRuleGenerator):
         """Test that pipe characters are escaped to prevent command injection."""
         malicious = "test|delete index=*"

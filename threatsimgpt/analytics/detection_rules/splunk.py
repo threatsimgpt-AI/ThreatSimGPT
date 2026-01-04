@@ -89,9 +89,6 @@ class SplunkRuleGenerator(BaseRuleGenerator):
     # Newline/CR at end since they're replaced, not escaped
     ESCAPE_ORDER = ('\\', '"', "'", '|', ';', '`', '[', ']', '(', ')', '$', '\n', '\r')
     
-    # Regex metacharacters that need escaping for ReDoS prevention
-    REGEX_METACHARACTERS = frozenset({'.', '*', '+', '?', '^', '$', '{', '}', '[', ']', '|', '(', ')'})
-    
     # Query complexity limits to prevent DoS attacks
     MAX_CONDITIONS = 50
     MAX_NESTING_DEPTH = 5
@@ -99,6 +96,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
     
     # Sigma field separator limit - only split on first pipe for valid Sigma syntax
     SIGMA_FIELD_SEPARATOR_LIMIT = 1
+    
+    # Rate limiting for sanitization logging (prevents log flooding in high-volume scenarios)
+    LOG_RATE_LIMIT = 100  # Log every Nth sanitization event
     
     def __init__(self, index_map: Optional[Dict[str, str]] = None) -> None:
         """Initialize Splunk rule generator.
@@ -120,6 +120,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             self.index_map = index_map.copy()
         else:
             self.index_map = self.DEFAULT_INDEX_MAP.copy()
+        
+        # Rate limiting counter for sanitization logging
+        self._sanitize_log_counter = 0
     
     def _sanitize_value(self, value: str) -> str:
         """Sanitize user input to prevent SPL injection attacks.
@@ -191,12 +194,14 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             escaped = self.SPL_DANGEROUS_CHARS[char]
             result = result.replace(char, escaped)
         
-        # SECURITY: Log sanitization events for SIEM monitoring
+        # SECURITY: Rate-limited logging for SIEM monitoring (prevents log flooding)
         if result != original:
-            logger.info(
-                f"SPL value sanitized: {len(original)} chars, "
-                f"{sum(1 for c in original if c in self.SPL_DANGEROUS_CHARS)} dangerous chars escaped"
-            )
+            self._sanitize_log_counter += 1
+            if self._sanitize_log_counter % self.LOG_RATE_LIMIT == 1:
+                logger.info(
+                    f"SPL value sanitized (sample {self._sanitize_log_counter}): {len(original)} chars, "
+                    f"{sum(1 for c in original if c in self.SPL_DANGEROUS_CHARS)} dangerous chars escaped"
+                )
         
         return result
     
@@ -372,7 +377,7 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             rule: DetectionRule object
             
         Returns:
-            Index specification string
+            Index specification string (e.g., "index=windows")
         """
         product = rule.logsource.product or "windows"
         
@@ -512,13 +517,16 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         return sanitized_value
     
     def _build_aggregation(self, aggregation: Dict[str, Any]) -> str:
-        """Build SPL aggregation commands.
+        """Build SPL aggregation commands with field sanitization.
         
         Args:
             aggregation: Aggregation configuration
             
         Returns:
             SPL aggregation string
+            
+        Security:
+            - Field names in groupby are sanitized to prevent injection
         """
         parts = []
         
@@ -529,7 +537,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             if group_by:
                 if isinstance(group_by, str):
                     group_by = [group_by]
-                parts.append(f"| stats count by {', '.join(group_by)}")
+                # SECURITY: Sanitize field names in groupby clause
+                sanitized_fields = [self._sanitize_value(field) for field in group_by]
+                parts.append(f"| stats count by {', '.join(sanitized_fields)}")
                 parts.append(f"| where count > {threshold}")
             else:
                 parts.append(f"| stats count")
@@ -537,7 +547,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         
         if "timeframe" in aggregation:
             timeframe = aggregation["timeframe"]
-            parts.insert(0, f"| bin _time span={timeframe}")
+            # SECURITY: Sanitize timeframe value
+            sanitized_timeframe = self._sanitize_value(str(timeframe))
+            parts.insert(0, f"| bin _time span={sanitized_timeframe}")
         
         return "\n".join(parts)
     

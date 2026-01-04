@@ -1,16 +1,17 @@
 # ============================================================================
-# ThreatSimGPT - Simplified .gitignore
+# ThreatSimGPT - .gitignore
 # ============================================================================
-# Policy: All unofficial documents and dev files go in /dev/ folder
+# Policy: Keep this clean with only standard/universal patterns.
+# All project-specific dev files, docs, and sensitive configs go in /dev/
 # ============================================================================
 
 # =========================
-# DEV FOLDER (ALL UNOFFICIAL DOCS)
+# DEV FOLDER (All unofficial/personal/sensitive files)
 # =========================
 /dev/
 
 # =========================
-# PYTHON STANDARD IGNORES
+# PYTHON
 # =========================
 __pycache__/
 *.py[cod]
@@ -24,7 +25,7 @@ dist/
 .installed.cfg
 
 # =========================
-# ENVIRONMENTS
+# VIRTUAL ENVIRONMENTS
 # =========================
 .env
 .venv/
@@ -41,10 +42,15 @@ coverage.xml
 .pytest_cache/
 .tox/
 .nox/
-.ruff_cache/
 
 # =========================
-# IDE & EDITORS
+# LINTING & FORMATTING
+# =========================
+.ruff_cache/
+.mypy_cache/
+
+# =========================
+# IDE & OS
 # =========================
 .idea/
 .vscode/
@@ -54,46 +60,8 @@ coverage.xml
 .DS_Store
 
 # =========================
-# LOGS & DATA
-# =========================
-*.log
-logs/
-data/
-temp/
-tmp/
-.cache/
-reports/
-output/
-models/
-
-# =========================
-# SECRETS & LOCAL CONFIG
-# =========================
-config/local.yaml
-config/production.yaml
-.env.local
-.env.production
-k8s/secrets/
-
-# =========================
-# DATABASE
-# =========================
-*.db
-*.sqlite
-*.sqlite3
-dump.rdb
-
-# =========================
-# DEPRECATED STRUCTURE
-# =========================
-src/
-docs_archive/
-
-# =========================
-# MISC
+# TEMPORARY FILES
 # =========================
 *.tmp
 *.temp
-*.backup
-*.bak
-*.zip
+*.log

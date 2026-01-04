@@ -205,6 +205,125 @@ class TestSplunkRuleGenerator:
         
         assert len(rules) == 1
         assert "powershell" in rules[0].title.lower() or "T1059.001" in rules[0].title
+    
+    def test_custom_index_map(self):
+        """Test configurable index mapping."""
+        custom_map = {
+            "windows": "index=sec_windows_prod",
+            "linux": "index=sec_linux_prod",
+        }
+        generator = SplunkRuleGenerator(index_map=custom_map)
+        
+        assert generator.index_map["windows"] == "index=sec_windows_prod"
+        assert "sec_linux_prod" in generator.index_map["linux"]
+
+
+class TestSplunkSecurityFeatures:
+    """Test SPL injection prevention and security features (Issue #58)."""
+    
+    @pytest.fixture
+    def generator(self) -> SplunkRuleGenerator:
+        return SplunkRuleGenerator()
+    
+    def test_sanitize_pipe_injection(self, generator: SplunkRuleGenerator):
+        """Test that pipe characters are escaped to prevent command injection."""
+        malicious = "test|delete index=*"
+        sanitized = generator._sanitize_value(malicious)
+        
+        # Pipe should be escaped with backslash
+        assert "\\|" in sanitized
+        # Raw unescaped pipe should not exist (check it's not just |delete but \|delete)
+        assert sanitized == "test\\|delete index=*"
+    
+    def test_sanitize_semicolon_injection(self, generator: SplunkRuleGenerator):
+        """Test that semicolons are escaped to prevent command chaining."""
+        malicious = "test; | delete index=*"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert "\\;" in sanitized
+        assert sanitized == "test\\; \\| delete index=*"
+    
+    def test_sanitize_backtick_injection(self, generator: SplunkRuleGenerator):
+        """Test that backticks are escaped to prevent subsearch injection."""
+        malicious = "test`search index=sensitive`"
+        sanitized = generator._sanitize_value(malicious)
+        
+        # Backticks should be escaped
+        assert "\\`" in sanitized
+        assert sanitized == "test\\`search index=sensitive\\`"
+    
+    def test_sanitize_quote_injection(self, generator: SplunkRuleGenerator):
+        """Test that quotes are escaped to prevent string escape attacks."""
+        malicious = 'test" OR 1=1 OR "'
+        sanitized = generator._sanitize_value(malicious)
+        
+        # Quotes should be escaped
+        assert '\\"' in sanitized
+        assert sanitized == 'test\\" OR 1=1 OR \\"'
+    
+    def test_sanitize_preserves_backslash_order(self, generator: SplunkRuleGenerator):
+        """Test that backslashes are escaped first to prevent double-escaping."""
+        malicious = 'test\\|command'
+        sanitized = generator._sanitize_value(malicious)
+        
+        # Backslash should be escaped first, then pipe
+        # Input: test\|command -> test\\|command (backslash escaped) -> test\\\|command (pipe escaped)
+        assert '\\\\' in sanitized  # Escaped backslash
+        assert '\\|' in sanitized   # Escaped pipe
+    
+    def test_format_value_uses_sanitization(self, generator: SplunkRuleGenerator):
+        """Test that _format_value applies sanitization."""
+        malicious = "malware|delete index=*"
+        result = generator._format_value(malicious)
+        
+        # Should contain escaped pipe
+        assert "\\|" in result
+        # The full result should have the escaped version
+        assert "malware\\|delete" in result
+    
+    def test_complexity_limit_enforced(self, generator: SplunkRuleGenerator):
+        """Test that query complexity limits prevent DoS."""
+        # Create selection with too many conditions
+        oversized_selection = {f"field_{i}": f"value_{i}" for i in range(60)}
+        
+        with pytest.raises(ValueError, match="exceeds maximum conditions"):
+            generator._convert_selection(oversized_selection)
+    
+    def test_complexity_within_limit(self, generator: SplunkRuleGenerator):
+        """Test that selections within limit work normally."""
+        valid_selection = {f"field_{i}": f"value_{i}" for i in range(10)}
+        
+        result = generator._convert_selection(valid_selection)
+        assert "field_0" in result
+        assert "field_9" in result
+    
+    def test_sanitize_single_quote_injection(self, generator: SplunkRuleGenerator):
+        """Test that single quotes are escaped."""
+        malicious = "test' OR '1'='1"
+        sanitized = generator._sanitize_value(malicious)
+        
+        assert "\\'" in sanitized
+        assert sanitized == "test\\' OR \\'1\\'=\\'1"
+    
+    def test_field_name_injection_prevented(self, generator: SplunkRuleGenerator):
+        """Test that field names are sanitized to prevent injection."""
+        # Attacker tries to inject via field name
+        malicious_selection = {"EventCode=1 | delete index": "anything"}
+        result = generator._convert_selection(malicious_selection)
+        
+        # Pipe should be escaped in field name
+        assert "\\|" in result
+        assert "| delete" not in result
+    
+    def test_simple_value_returns_sanitized(self, generator: SplunkRuleGenerator):
+        """Test that simple values without spaces/wildcards are still sanitized."""
+        # This tests the critical fix - simple values must return sanitized
+        malicious = "admin|delete"
+        result = generator._format_value(malicious)
+        
+        # Should be sanitized even without quotes
+        assert "\\|" in result
+        assert result == "admin\\|delete"
 
 
 class TestElasticRuleGenerator:

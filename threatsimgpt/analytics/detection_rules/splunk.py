@@ -22,7 +22,13 @@ from .models import (
 
 
 class SplunkRuleGenerator(BaseRuleGenerator):
-    """Generator for Splunk SPL detection queries."""
+    """Generator for Splunk SPL detection queries.
+    
+    Security Features:
+        - Input sanitization to prevent SPL injection
+        - Configurable index mapping for enterprise deployments
+        - Query complexity limits to prevent DoS
+    """
     
     format = RuleFormat.SPLUNK
     
@@ -36,8 +42,8 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         "all": "AND",
     }
     
-    # Log source to Splunk index mapping
-    INDEX_MAP = {
+    # Default log source to Splunk index mapping (configurable via constructor)
+    DEFAULT_INDEX_MAP = {
         "windows": "index=windows",
         "linux": "index=linux",
         "sysmon": "index=sysmon",
@@ -48,6 +54,67 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         "cloud_aws": "index=aws",
         "cloud_azure": "index=azure",
     }
+    
+    # Characters that need escaping in SPL values (security - prevents injection)
+    SPL_DANGEROUS_CHARS = {
+        '\\': '\\\\',  # Backslash - escape char (must be first)
+        '"': '\\"',    # Double quote - string delimiter
+        "'": "\\'",    # Single quote - alternate string delimiter
+        '|': '\\|',    # Pipe - command separator
+        ';': '\\;',    # Semicolon - command terminator
+        '`': '\\`',    # Backtick - subsearch delimiter
+    }
+    
+    # Query complexity limits to prevent DoS attacks
+    MAX_CONDITIONS = 50
+    MAX_NESTING_DEPTH = 5
+    
+    def __init__(self, index_map: Optional[Dict[str, str]] = None):
+        """Initialize Splunk rule generator.
+        
+        Args:
+            index_map: Custom index mapping for enterprise deployments.
+                       If None, uses DEFAULT_INDEX_MAP.
+                       
+        Example:
+            # Custom index mapping for your environment
+            generator = SplunkRuleGenerator(index_map={
+                "windows": "index=sec_windows",
+                "linux": "index=sec_linux",
+            })
+        """
+        super().__init__()
+        self.index_map = index_map if index_map is not None else self.DEFAULT_INDEX_MAP.copy()
+    
+    def _sanitize_value(self, value: str) -> str:
+        """Sanitize user input to prevent SPL injection attacks.
+        
+        This method escapes dangerous characters that could be used
+        for SPL injection. Must be called on all user-provided values
+        before interpolation into SPL queries.
+        
+        Args:
+            value: User-provided value to sanitize
+            
+        Returns:
+            Sanitized value safe for SPL interpolation
+            
+        Security:
+            Escapes: \\, ", |, ;, `
+            
+        Example:
+            >>> gen._sanitize_value('test|delete index=*')
+            'test\\|delete index=*'
+        """
+        if not isinstance(value, str):
+            value = str(value)
+        
+        result = value
+        # Escape in order - backslash first to avoid double-escaping
+        for char, escaped in self.SPL_DANGEROUS_CHARS.items():
+            result = result.replace(char, escaped)
+        
+        return result
     
     def generate(self, rule: DetectionRule) -> str:
         """Generate Splunk SPL query from DetectionRule.
@@ -173,21 +240,31 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         """
         product = rule.logsource.product or "windows"
         
-        if product in self.INDEX_MAP:
-            return self.INDEX_MAP[product]
+        if product in self.index_map:
+            return self.index_map[product]
         
         # Default to windows
-        return "index=windows"
+        return self.index_map.get("windows", "index=windows")
     
     def _convert_selection(self, selection: Dict[str, Any]) -> str:
-        """Convert Sigma selection to SPL.
+        """Convert Sigma selection to SPL with complexity limits.
         
         Args:
             selection: Sigma selection dictionary
             
         Returns:
             SPL filter string
+            
+        Raises:
+            ValueError: If selection exceeds MAX_CONDITIONS limit
         """
+        # SECURITY: Enforce complexity limits to prevent DoS
+        if len(selection) > self.MAX_CONDITIONS:
+            raise ValueError(
+                f"Selection exceeds maximum conditions ({len(selection)} > {self.MAX_CONDITIONS}). "
+                "This limit prevents query complexity attacks."
+            )
+        
         conditions = []
         
         for field, value in selection.items():
@@ -204,16 +281,28 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         """Convert a single field condition to SPL.
         
         Args:
-            field: Field name (possibly with modifier)
+            field: Field name (possibly with modifier like 'field|contains')
             value: Field value(s)
             
         Returns:
             SPL condition string
         """
-        # Parse field and modifier
-        parts = field.split("|")
+        # Parse field and modifier - only split on first pipe for valid Sigma syntax
+        # Valid: "CommandLine|contains" -> field="CommandLine", modifier="contains"
+        # Invalid/attack: "EventCode=1 | delete" should be sanitized
+        parts = field.split("|", 1)  # Only split on first pipe
         field_name = parts[0]
         modifier = parts[1] if len(parts) > 1 else None
+        
+        # SECURITY: Validate modifier is a known safe value
+        valid_modifiers = {"contains", "startswith", "endswith", "re", "base64", "all", None}
+        if modifier and modifier not in valid_modifiers:
+            # Unknown modifier - treat entire string as field name and sanitize
+            field_name = field
+            modifier = None
+        
+        # SECURITY: Sanitize field name to prevent injection via field names
+        sanitized_field = self._sanitize_value(field_name)
         
         # Handle list values
         if isinstance(value, list):
@@ -221,39 +310,46 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             for v in value:
                 spl_values.append(self._format_value(v, modifier))
             
-            return f'({field_name}=' + f' OR {field_name}='.join(spl_values) + ')'
+            return f'({sanitized_field}=' + f' OR {sanitized_field}='.join(spl_values) + ')'
         
         # Single value
         formatted_value = self._format_value(value, modifier)
-        return f'{field_name}={formatted_value}'
+        return f'{sanitized_field}={formatted_value}'
     
     def _format_value(self, value: Any, modifier: Optional[str] = None) -> str:
-        """Format a value for SPL.
+        """Format a value for SPL with injection protection.
         
         Args:
             value: Value to format
             modifier: Sigma modifier
             
         Returns:
-            Formatted SPL value
+            Formatted and sanitized SPL value
+            
+        Security:
+            All values are sanitized via _sanitize_value() before interpolation.
         """
         str_value = str(value)
         
+        # SECURITY: Sanitize user input to prevent SPL injection
+        sanitized_value = self._sanitize_value(str_value)
+        
         # Apply modifier
         if modifier == "contains":
-            return f'"*{str_value}*"'
+            return f'"*{sanitized_value}*"'
         elif modifier == "startswith":
-            return f'"{str_value}*"'
+            return f'"{sanitized_value}*"'
         elif modifier == "endswith":
-            return f'"*{str_value}"'
+            return f'"*{sanitized_value}"'
         elif modifier == "re":
-            return f'| regex "{str_value}"'
+            return f'| regex "{sanitized_value}"'
         
-        # Quote strings with spaces
-        if " " in str_value or "*" in str_value:
-            return f'"{str_value}"'
+        # Quote strings with spaces or wildcards
+        if " " in sanitized_value or "*" in sanitized_value:
+            return f'"{sanitized_value}"'
         
-        return str_value
+        # SECURITY FIX: Return sanitized value, not original
+        return sanitized_value
     
     def _build_aggregation(self, aggregation: Dict[str, Any]) -> str:
         """Build SPL aggregation commands.

@@ -5,8 +5,10 @@ Generates Splunk Search Processing Language (SPL) queries from detection rules.
 Author: David Onoja (Blue Team)
 """
 
+import logging
 import re
-from typing import Any, Dict, List, Optional
+import unicodedata
+from typing import Any, Dict, List, Optional, Tuple
 
 from .generator import BaseRuleGenerator, MITRE_TECHNIQUES, ATTACK_LOG_SOURCES
 from .models import (
@@ -20,9 +22,21 @@ from .models import (
     RuleStatus,
 )
 
+# Security event logging for SIEM ingestion
+logger = logging.getLogger(__name__)
+
 
 class SplunkRuleGenerator(BaseRuleGenerator):
-    """Generator for Splunk SPL detection queries."""
+    """Generator for Splunk SPL detection queries.
+    
+    Security Features:
+        - Input sanitization to prevent SPL injection
+        - Regex sanitization to prevent ReDoS attacks
+        - Configurable index mapping for enterprise deployments
+        - Query complexity limits to prevent DoS
+        - Input length validation
+        - Security event logging
+    """
     
     format = RuleFormat.SPLUNK
     
@@ -36,8 +50,11 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         "all": "AND",
     }
     
-    # Log source to Splunk index mapping
-    INDEX_MAP = {
+    # Valid Sigma modifiers for validation (class constant for maintainability)
+    VALID_MODIFIERS = frozenset({"contains", "startswith", "endswith", "re", "base64", "all"})
+    
+    # Default log source to Splunk index mapping (configurable via constructor)
+    DEFAULT_INDEX_MAP = {
         "windows": "index=windows",
         "linux": "index=linux",
         "sysmon": "index=sysmon",
@@ -48,6 +65,197 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         "cloud_aws": "index=aws",
         "cloud_azure": "index=azure",
     }
+    
+    # Characters that need escaping in SPL values (security - prevents injection)
+    # Expanded coverage for comprehensive protection
+    SPL_DANGEROUS_CHARS = {
+        '\\': '\\\\',  # Backslash - escape char (must be first)
+        '"': '\\"',    # Double quote - string delimiter
+        "'": "\\'",    # Single quote - alternate string delimiter
+        '|': '\\|',    # Pipe - command separator
+        ';': '\\;',    # Semicolon - command terminator
+        '`': '\\`',    # Backtick - subsearch delimiter
+        '[': '\\[',    # Open bracket - index injection
+        ']': '\\]',    # Close bracket - index injection
+        '(': '\\(',    # Open paren - subsearch grouping
+        ')': '\\)',    # Close paren - subsearch grouping
+        '$': '\\$',    # Dollar sign - variable injection
+        '\n': ' ',     # Newline - command injection (replace with space)
+        '\r': ' ',     # Carriage return - command injection (replace with space)
+    }
+    
+    # Explicit escape order to avoid dict ordering dependency
+    # Backslash MUST be first to prevent double-escaping
+    # Newline/CR at end since they're replaced, not escaped
+    ESCAPE_ORDER = ('\\', '"', "'", '|', ';', '`', '[', ']', '(', ')', '$', '\n', '\r')
+    
+    # Query complexity limits to prevent DoS attacks
+    MAX_CONDITIONS = 50
+    MAX_NESTING_DEPTH = 5
+    MAX_VALUE_LENGTH = 10000  # Maximum input length to prevent memory exhaustion
+    
+    # Sigma field separator limit - only split on first pipe for valid Sigma syntax
+    SIGMA_FIELD_SEPARATOR_LIMIT = 1
+    
+    # Rate limiting for sanitization logging (prevents log flooding in high-volume scenarios)
+    LOG_RATE_LIMIT = 100  # Log every Nth sanitization event
+    
+    def __init__(self, index_map: Optional[Dict[str, str]] = None) -> None:
+        """Initialize Splunk rule generator.
+        
+        Args:
+            index_map: Custom index mapping for enterprise deployments.
+                       If None, uses DEFAULT_INDEX_MAP.
+                       
+        Example:
+            # Custom index mapping for your environment
+            generator = SplunkRuleGenerator(index_map={
+                "windows": "index=sec_windows",
+                "linux": "index=sec_linux",
+            })
+        """
+        super().__init__()
+        # SECURITY: Copy index_map to prevent external mutation
+        if index_map is not None:
+            self.index_map = index_map.copy()
+        else:
+            self.index_map = self.DEFAULT_INDEX_MAP.copy()
+        
+        # Rate limiting counter for sanitization logging
+        self._sanitize_log_counter = 0
+    
+    def _sanitize_value(self, value: str) -> str:
+        """Sanitize user input to prevent SPL injection attacks.
+        
+        This method escapes dangerous characters that could be used
+        for SPL injection. Must be called on all user-provided values
+        before interpolation into SPL queries.
+        
+        Args:
+            value: User-provided value to sanitize
+            
+        Returns:
+            Sanitized value safe for SPL interpolation
+            
+        Raises:
+            ValueError: If value exceeds MAX_VALUE_LENGTH
+            
+        Security:
+            - Unicode normalization (NFKC) to prevent bypass via fullwidth chars
+            - Null byte stripping to prevent string termination attacks
+            - Escapes: \\, ", ', |, ;, `, [, ], (, ), $, \\n, \\r
+            - Validates input length before AND after normalization
+            - Logs sanitization events for security monitoring
+            
+        Example:
+            >>> gen._sanitize_value('test|delete index=*')
+            'test\\|delete index=*'
+        """
+        if not isinstance(value, str):
+            value = str(value)
+        
+        # SECURITY: Pre-normalization length check to prevent DoS from normalization itself
+        # NFKC normalization can EXPAND strings (e.g., ﬁ → fi), so check before processing
+        # Allow 2x headroom for expansion, but reject obviously malicious inputs
+        if len(value) > self.MAX_VALUE_LENGTH * 2:
+            logger.warning(
+                f"SPL injection attempt blocked: pre-normalization value too long "
+                f"({len(value)} > {self.MAX_VALUE_LENGTH * 2})"
+            )
+            raise ValueError(
+                f"Value exceeds maximum pre-normalization length ({len(value)} > {self.MAX_VALUE_LENGTH * 2}). "
+                "This limit prevents DoS attacks via Unicode expansion."
+            )
+        
+        # SECURITY: Normalize Unicode to prevent bypass via fullwidth/alternate chars
+        # NFKC normalization converts fullwidth pipe ｜ (U+FF5C) to ASCII pipe |
+        value = unicodedata.normalize('NFKC', value)
+        
+        # SECURITY: Strip null bytes to prevent string termination attacks
+        # Null bytes can cause downstream systems to truncate strings
+        value = value.replace('\x00', '')
+        
+        # SECURITY: Post-normalization length check to enforce final limit
+        if len(value) > self.MAX_VALUE_LENGTH:
+            logger.warning(
+                f"SPL injection attempt blocked: normalized value exceeds max length "
+                f"({len(value)} > {self.MAX_VALUE_LENGTH})"
+            )
+            raise ValueError(
+                f"Value exceeds maximum length ({len(value)} > {self.MAX_VALUE_LENGTH}). "
+                "This limit prevents memory exhaustion attacks."
+            )
+        
+        result = value
+        original = value
+        
+        # Escape using explicit order - backslash first to avoid double-escaping
+        for char in self.ESCAPE_ORDER:
+            escaped = self.SPL_DANGEROUS_CHARS[char]
+            result = result.replace(char, escaped)
+        
+        # SECURITY: Rate-limited logging for SIEM monitoring (prevents log flooding)
+        if result != original:
+            self._sanitize_log_counter += 1
+            if self._sanitize_log_counter % self.LOG_RATE_LIMIT == 1:
+                logger.info(
+                    f"SPL value sanitized (sample {self._sanitize_log_counter}): {len(original)} chars, "
+                    f"{sum(1 for c in original if c in self.SPL_DANGEROUS_CHARS)} dangerous chars escaped"
+                )
+        
+        return result
+    
+    def _sanitize_regex(self, value: str) -> str:
+        """Sanitize regex patterns to prevent ReDoS attacks.
+        
+        This method escapes regex metacharacters that could cause
+        catastrophic backtracking (ReDoS - Regular Expression Denial of Service).
+        
+        Args:
+            value: User-provided regex pattern to sanitize
+            
+        Returns:
+            Sanitized regex pattern safe from ReDoS
+            
+        Security:
+            - Escapes regex metacharacters: . * + ? ^ $ { } [ ] | ( )
+            - Prevents catastrophic backtracking patterns like (a+)+
+            - Should be used for all regex modifier values
+            
+        Note:
+            This is a defense-in-depth measure. The regex modifier should be used
+            with caution as Splunk's regex engine may still have performance
+            implications with complex patterns. Consider restricting regex usage
+            to trusted sources only.
+            
+        Known Limitations:
+            - URL-encoded bypass (e.g., %7C for pipe) is out of scope and should
+              be handled at the HTTP/input validation layer before reaching this code.
+            
+        Example:
+            >>> gen._sanitize_regex('(a+)+')
+            '\\(a\\+\\)\\+'
+        """
+        if not isinstance(value, str):
+            value = str(value)
+        
+        # SECURITY: Validate input length
+        if len(value) > self.MAX_VALUE_LENGTH:
+            logger.warning(
+                f"Regex value rejected: exceeds max length ({len(value)} > {self.MAX_VALUE_LENGTH})"
+            )
+            raise ValueError(
+                f"Regex value exceeds maximum length ({len(value)} > {self.MAX_VALUE_LENGTH}). "
+                "This limit prevents memory exhaustion attacks."
+            )
+        
+        # Escape regex metacharacters to prevent ReDoS
+        result = re.escape(value)
+        
+        # SECURITY: Log sanitization without exposing sensitive pattern content
+        logger.debug(f"Regex pattern sanitized: {len(value)} chars input")
+        
+        return result
     
     def generate(self, rule: DetectionRule) -> str:
         """Generate Splunk SPL query from DetectionRule.
@@ -86,7 +294,7 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         
         return "\n".join(lines)
     
-    def validate(self, rule_content: str) -> tuple[bool, List[str]]:
+    def validate(self, rule_content: str) -> Tuple[bool, List[str]]:
         """Validate Splunk SPL syntax.
         
         Args:
@@ -169,31 +377,61 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             rule: DetectionRule object
             
         Returns:
-            Index specification string
+            Index specification string (e.g., "index=windows")
         """
         product = rule.logsource.product or "windows"
         
-        if product in self.INDEX_MAP:
-            return self.INDEX_MAP[product]
+        if product in self.index_map:
+            return self.index_map[product]
         
         # Default to windows
-        return "index=windows"
+        return self.index_map.get("windows", "index=windows")
     
-    def _convert_selection(self, selection: Dict[str, Any]) -> str:
-        """Convert Sigma selection to SPL.
+    def _convert_selection(self, selection: Dict[str, Any], depth: int = 0) -> str:
+        """Convert Sigma selection to SPL with complexity limits.
         
         Args:
             selection: Sigma selection dictionary
+            depth: Current nesting depth for recursive calls
             
         Returns:
             SPL filter string
+            
+        Raises:
+            ValueError: If selection exceeds MAX_CONDITIONS or MAX_NESTING_DEPTH limit
         """
+        # SECURITY: Enforce nesting depth limit to prevent stack exhaustion
+        if depth > self.MAX_NESTING_DEPTH:
+            logger.warning(
+                f"SPL complexity attack blocked: nesting depth {depth} exceeds limit {self.MAX_NESTING_DEPTH}"
+            )
+            raise ValueError(
+                f"Selection nesting depth exceeds maximum ({depth} > {self.MAX_NESTING_DEPTH}). "
+                "This limit prevents query complexity attacks."
+            )
+        
+        # SECURITY: Enforce complexity limits to prevent DoS
+        if len(selection) > self.MAX_CONDITIONS:
+            logger.warning(
+                f"SPL complexity attack blocked: {len(selection)} conditions exceeds limit {self.MAX_CONDITIONS}"
+            )
+            raise ValueError(
+                f"Selection exceeds maximum conditions ({len(selection)} > {self.MAX_CONDITIONS}). "
+                "This limit prevents query complexity attacks."
+            )
+        
         conditions = []
         
         for field, value in selection.items():
-            spl_condition = self._field_to_spl(field, value)
-            if spl_condition:
-                conditions.append(spl_condition)
+            # Handle nested selections (recursively)
+            if isinstance(value, dict):
+                nested_spl = self._convert_selection(value, depth + 1)
+                if nested_spl:
+                    conditions.append(f"({nested_spl})")
+            else:
+                spl_condition = self._field_to_spl(field, value)
+                if spl_condition:
+                    conditions.append(spl_condition)
         
         if not conditions:
             return ""
@@ -204,16 +442,29 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         """Convert a single field condition to SPL.
         
         Args:
-            field: Field name (possibly with modifier)
+            field: Field name (possibly with modifier like 'field|contains')
             value: Field value(s)
             
         Returns:
             SPL condition string
         """
-        # Parse field and modifier
-        parts = field.split("|")
+        # Parse field and modifier - only split on first pipe for valid Sigma syntax
+        # Valid: "CommandLine|contains" -> field="CommandLine", modifier="contains"
+        # Invalid/attack: "EventCode=1 | delete" should be sanitized
+        parts = field.split("|", self.SIGMA_FIELD_SEPARATOR_LIMIT)
         field_name = parts[0]
         modifier = parts[1] if len(parts) > 1 else None
+        
+        # SECURITY: Validate modifier is a known safe value (using class constant)
+        if modifier and modifier not in self.VALID_MODIFIERS:
+            # Unknown modifier - treat entire string as field name and sanitize
+            # Truncate modifier in log to prevent log injection with long payloads
+            logger.warning(f"Invalid Sigma modifier rejected: '{modifier[:20]}{'...' if len(modifier) > 20 else ''}'")
+            field_name = field
+            modifier = None
+        
+        # SECURITY: Sanitize field name to prevent injection via field names
+        sanitized_field = self._sanitize_value(field_name)
         
         # Handle list values
         if isinstance(value, list):
@@ -221,48 +472,61 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             for v in value:
                 spl_values.append(self._format_value(v, modifier))
             
-            return f'({field_name}=' + f' OR {field_name}='.join(spl_values) + ')'
+            return f'({sanitized_field}=' + f' OR {sanitized_field}='.join(spl_values) + ')'
         
         # Single value
         formatted_value = self._format_value(value, modifier)
-        return f'{field_name}={formatted_value}'
+        return f'{sanitized_field}={formatted_value}'
     
     def _format_value(self, value: Any, modifier: Optional[str] = None) -> str:
-        """Format a value for SPL.
+        """Format a value for SPL with injection protection.
         
         Args:
             value: Value to format
             modifier: Sigma modifier
             
         Returns:
-            Formatted SPL value
+            Formatted and sanitized SPL value
+            
+        Security:
+            - All values are sanitized via _sanitize_value() before interpolation
+            - Regex values use _sanitize_regex() to prevent ReDoS attacks
         """
         str_value = str(value)
         
+        # SECURITY: Sanitize user input to prevent SPL injection
+        sanitized_value = self._sanitize_value(str_value)
+        
         # Apply modifier
         if modifier == "contains":
-            return f'"*{str_value}*"'
+            return f'"*{sanitized_value}*"'
         elif modifier == "startswith":
-            return f'"{str_value}*"'
+            return f'"{sanitized_value}*"'
         elif modifier == "endswith":
-            return f'"*{str_value}"'
+            return f'"*{sanitized_value}"'
         elif modifier == "re":
-            return f'| regex "{str_value}"'
+            # SECURITY: Use regex-specific sanitization to prevent ReDoS
+            regex_safe_value = self._sanitize_regex(str_value)
+            return f'| regex "{regex_safe_value}"'
         
-        # Quote strings with spaces
-        if " " in str_value or "*" in str_value:
-            return f'"{str_value}"'
+        # Quote strings with spaces or wildcards
+        if " " in sanitized_value or "*" in sanitized_value:
+            return f'"{sanitized_value}"'
         
-        return str_value
+        # SECURITY FIX: Return sanitized value, not original
+        return sanitized_value
     
     def _build_aggregation(self, aggregation: Dict[str, Any]) -> str:
-        """Build SPL aggregation commands.
+        """Build SPL aggregation commands with field sanitization.
         
         Args:
             aggregation: Aggregation configuration
             
         Returns:
             SPL aggregation string
+            
+        Security:
+            - Field names in groupby are sanitized to prevent injection
         """
         parts = []
         
@@ -273,7 +537,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
             if group_by:
                 if isinstance(group_by, str):
                     group_by = [group_by]
-                parts.append(f"| stats count by {', '.join(group_by)}")
+                # SECURITY: Sanitize field names in groupby clause
+                sanitized_fields = [self._sanitize_value(field) for field in group_by]
+                parts.append(f"| stats count by {', '.join(sanitized_fields)}")
                 parts.append(f"| where count > {threshold}")
             else:
                 parts.append(f"| stats count")
@@ -281,7 +547,9 @@ class SplunkRuleGenerator(BaseRuleGenerator):
         
         if "timeframe" in aggregation:
             timeframe = aggregation["timeframe"]
-            parts.insert(0, f"| bin _time span={timeframe}")
+            # SECURITY: Sanitize timeframe value
+            sanitized_timeframe = self._sanitize_value(str(timeframe))
+            parts.insert(0, f"| bin _time span={sanitized_timeframe}")
         
         return "\n".join(parts)
     

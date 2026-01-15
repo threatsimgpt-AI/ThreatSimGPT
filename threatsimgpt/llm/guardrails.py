@@ -30,9 +30,15 @@ logger = logging.getLogger(__name__)
 
 MAX_TEXT_LENGTH = 50_000  # 50KB input limit
 MAX_MATCHES_PER_RULE = 100  # Prevent DoS from excessive matches
-REGEX_TIMEOUT_SECONDS = 2  # Timeout for regex operations
+REGEX_TIMEOUT_SECONDS = 0.1  # 100ms timeout for regex operations (P0 Fix: ReDoS protection)
 MAX_VALIDATOR_FAILURES = 5  # Circuit breaker threshold
 CIRCUIT_BREAKER_TIMEOUT = 60  # Seconds before retry
+MAX_TRACKED_VALIDATORS = 1000  # P0 Fix: Prevent memory leak in circuit breaker
+
+# Rate limiting constants (P0 Fix: Per-user rate limiting)
+DEFAULT_RATE_LIMIT_PER_USER = 100  # requests per minute
+DEFAULT_RATE_LIMIT_BURST = 10  # burst allowance
+DEFAULT_GLOBAL_RATE_LIMIT = 10000  # global requests per minute
 
 # ============================================================================
 # Constants
@@ -67,6 +73,13 @@ class ViolationType(str, Enum):
     CUSTOM = "custom"
 
 
+class RateLimitExceeded(Exception):
+    """Exception raised when rate limit is exceeded. (P0 Fix)"""
+    def __init__(self, user_id: str, message: str = "Rate limit exceeded"):
+        self.user_id = user_id
+        self.message = message
+        super().__init__(f"{message} for user {user_id}")
+
 # ============================================================================
 # Helper Classes
 # ============================================================================
@@ -74,9 +87,15 @@ class ViolationType(str, Enum):
 class CircuitBreaker:
     """Circuit breaker for failing validators to prevent cascading failures."""
     
-    def __init__(self, failure_threshold: int = MAX_VALIDATOR_FAILURES, timeout: int = CIRCUIT_BREAKER_TIMEOUT):
+    def __init__(
+        self, 
+        failure_threshold: int = MAX_VALIDATOR_FAILURES, 
+        timeout: int = CIRCUIT_BREAKER_TIMEOUT,
+        max_tracked: int = MAX_TRACKED_VALIDATORS  # P0 Fix: Prevent memory leak
+    ):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
+        self.max_tracked = max_tracked
         self.failures: Dict[str, Tuple[int, float]] = {}  # validator_id -> (count, last_failure_time)
         self._lock = asyncio.Lock()
     
@@ -99,6 +118,13 @@ class CircuitBreaker:
     async def record_failure(self, validator_id: str) -> None:
         """Record a validator failure."""
         async with self._lock:
+            # P0 Fix: LRU eviction to prevent memory leak
+            if validator_id not in self.failures and len(self.failures) >= self.max_tracked:
+                # Evict oldest entry
+                oldest = min(self.failures, key=lambda k: self.failures[k][1])
+                del self.failures[oldest]
+                logger.debug(f"Circuit breaker evicted oldest entry: {oldest}")
+            
             if validator_id in self.failures:
                 count, _ = self.failures[validator_id]
                 self.failures[validator_id] = (count + 1, time.time())
@@ -114,6 +140,83 @@ class CircuitBreaker:
         async with self._lock:
             if validator_id in self.failures:
                 del self.failures[validator_id]
+
+
+class RateLimiter:
+    """Token bucket rate limiter for per-user rate limiting. (P0 Fix)
+    
+    Implements a sliding window rate limiter with burst support.
+    Thread-safe for async operations.
+    """
+    
+    def __init__(
+        self,
+        per_user_rpm: int = DEFAULT_RATE_LIMIT_PER_USER,
+        burst: int = DEFAULT_RATE_LIMIT_BURST,
+        global_rpm: int = DEFAULT_GLOBAL_RATE_LIMIT
+    ):
+        self.per_user_rpm = per_user_rpm
+        self.burst = burst
+        self.global_rpm = global_rpm
+        self._user_requests: Dict[str, List[float]] = {}  # user_id -> list of timestamps
+        self._global_requests: List[float] = []
+        self._lock = asyncio.Lock()
+        self._max_tracked_users = 10000  # Prevent memory exhaustion
+    
+    async def allow(self, user_id: str) -> bool:
+        """Check if a request from user_id should be allowed.
+        
+        Returns:
+            True if request is allowed, False if rate limited
+        """
+        now = time.time()
+        window_start = now - 60  # 1 minute window
+        
+        async with self._lock:
+            # Clean old entries and check global rate
+            self._global_requests = [t for t in self._global_requests if t > window_start]
+            if len(self._global_requests) >= self.global_rpm:
+                logger.warning(f"Global rate limit exceeded: {len(self._global_requests)} requests/min")
+                return False
+            
+            # Check per-user rate
+            if user_id not in self._user_requests:
+                # LRU eviction if too many users tracked
+                if len(self._user_requests) >= self._max_tracked_users:
+                    oldest_user = min(self._user_requests, 
+                                     key=lambda u: max(self._user_requests[u]) if self._user_requests[u] else 0)
+                    del self._user_requests[oldest_user]
+                self._user_requests[user_id] = []
+            
+            # Clean old entries for this user
+            self._user_requests[user_id] = [t for t in self._user_requests[user_id] if t > window_start]
+            
+            # Check if under limit (with burst allowance)
+            user_request_count = len(self._user_requests[user_id])
+            if user_request_count >= self.per_user_rpm + self.burst:
+                logger.warning(f"Rate limit exceeded for user {user_id}: {user_request_count} requests/min")
+                return False
+            
+            # Record this request
+            self._user_requests[user_id].append(now)
+            self._global_requests.append(now)
+            return True
+    
+    def get_user_usage(self, user_id: str) -> Dict[str, Any]:
+        """Get current usage stats for a user."""
+        now = time.time()
+        window_start = now - 60
+        
+        if user_id not in self._user_requests:
+            return {"requests": 0, "limit": self.per_user_rpm, "remaining": self.per_user_rpm}
+        
+        current = len([t for t in self._user_requests[user_id] if t > window_start])
+        return {
+            "requests": current,
+            "limit": self.per_user_rpm,
+            "remaining": max(0, self.per_user_rpm - current),
+            "burst_remaining": max(0, self.per_user_rpm + self.burst - current)
+        }
 
 
 @dataclass
@@ -334,20 +437,33 @@ class GuardrailsEngine:
     Supports:
     - Deterministic rule-based validation (regex patterns)
     - Custom validator plugins (extensible)
-    - Allowlist/Denylist with short-circuit logic
+    - Allowlist/Denylist with short-circuit logic (P0 Fix: no longer bypasses critical rules)
     - True async batch validation with parallel processing
     - Metrics and telemetry
     - Thread-safe operations
     - DoS protection (input size limits, match limits, timeouts)
     - Circuit breakers for failing validators
+    - Per-user rate limiting (P0 Fix)
     """
 
-    def __init__(self, rules: Optional[List[Rule]] = None, max_workers: int = 4):
+    def __init__(
+        self, 
+        rules: Optional[List[Rule]] = None, 
+        max_workers: int = 4,
+        enable_rate_limiting: bool = True,
+        rate_limit_per_user: int = DEFAULT_RATE_LIMIT_PER_USER,
+        rate_limit_burst: int = DEFAULT_RATE_LIMIT_BURST,
+        global_rate_limit: int = DEFAULT_GLOBAL_RATE_LIMIT
+    ):
         """Initialize the guardrails engine.
         
         Args:
             rules: Initial list of rules (optional)
             max_workers: Thread pool size for CPU-bound regex operations
+            enable_rate_limiting: Whether to enforce rate limits (P0 Fix)
+            rate_limit_per_user: Max requests per user per minute
+            rate_limit_burst: Burst allowance for rate limiting
+            global_rate_limit: Max global requests per minute
         """
         self._lock = asyncio.Lock()
         self.rules: List[Rule] = list(rules or [])
@@ -357,6 +473,15 @@ class GuardrailsEngine:
         self.metrics = GuardrailMetrics()
         self.circuit_breaker = CircuitBreaker()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        
+        # P0 Fix: Add rate limiter
+        self.enable_rate_limiting = enable_rate_limiting
+        self.rate_limiter = RateLimiter(
+            per_user_rpm=rate_limit_per_user,
+            burst=rate_limit_burst,
+            global_rpm=global_rate_limit
+        )
+        
         self._add_default_rules()
     
     def __del__(self):
@@ -424,6 +549,127 @@ class GuardrailsEngine:
                 "cred-aws-key",
                 "Detect AWS access keys",
                 r"(?i)(AKIA[0-9A-Z]{16})",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            # P0 FIX: Additional secret patterns (RED Team Security Review)
+            Rule.from_regex(
+                "cred-github-token",
+                "Detect GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)",
+                r"\b(gh[pousr]_[a-zA-Z0-9]{36,255})\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-github-pat-fine",
+                "Detect GitHub fine-grained PAT",
+                r"\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-jwt-token",
+                "Detect JWT tokens",
+                r"\beyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-private-key",
+                "Detect private keys (RSA, DSA, EC, PGP)",
+                r"-----BEGIN\s+(RSA|DSA|EC|PGP|OPENSSH)\s+PRIVATE\s+KEY-----",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-aws-secret",
+                "Detect AWS secret access keys",
+                r"(?i)(aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*['\"]?([a-zA-Z0-9/+=]{40})['\"]?",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-gcp-service-account",
+                "Detect GCP service account keys",
+                r'"type"\s*:\s*"service_account"',
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-azure-connection",
+                "Detect Azure connection strings",
+                r"(?i)(DefaultEndpointsProtocol|AccountKey|SharedAccessSignature)\s*=\s*[^;\s]+",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-slack-token",
+                "Detect Slack tokens (xox[baprs])",
+                r"\bxox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-stripe-key",
+                "Detect Stripe API keys (sk_live_, sk_test_, pk_live_, pk_test_)",
+                r"\b[sr]k_(live|test)_[a-zA-Z0-9]{24,}\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-twilio",
+                "Detect Twilio API keys and SIDs",
+                r"\b(SK[a-f0-9]{32}|AC[a-f0-9]{32})\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-sendgrid",
+                "Detect SendGrid API keys",
+                r"\bSG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-db-connection",
+                "Detect database connection strings with credentials",
+                r"(?i)(mongodb|postgresql|mysql|redis|amqp)://[^:]+:[^@]+@[^\s]+",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-openai-key",
+                "Detect OpenAI API keys",
+                r"\bsk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-npm-token",
+                "Detect npm tokens",
+                r"\bnpm_[a-zA-Z0-9]{36}\b",
+                severity=Severity.CRITICAL,
+                action=Action.BLOCK,
+                violation_type=ViolationType.CREDENTIALS
+            ),
+            Rule.from_regex(
+                "cred-pypi-token",
+                "Detect PyPI API tokens",
+                r"\bpypi-AgEIcHlwaS5vcmc[a-zA-Z0-9_-]{50,}\b",
                 severity=Severity.CRITICAL,
                 action=Action.BLOCK,
                 violation_type=ViolationType.CREDENTIALS
@@ -699,9 +945,19 @@ class GuardrailsEngine:
             
         Raises:
             ValueError: If input exceeds size limits
+            RateLimitExceeded: If user has exceeded rate limit (P0 Fix)
         """
         start_time = time.perf_counter()
         context = context or {}
+        
+        # P0 Fix: Rate limiting check
+        if self.enable_rate_limiting:
+            user_id = context.get("user_id", "anonymous")
+            if not await self.rate_limiter.allow(user_id):
+                raise RateLimitExceeded(
+                    user_id=user_id,
+                    message=f"Rate limit exceeded: {self.rate_limiter.per_user_rpm} requests/min"
+                )
         
         # DoS Protection: Input size limit
         if len(text) > MAX_TEXT_LENGTH:
@@ -727,14 +983,14 @@ class GuardrailsEngine:
             metadata={"context": context}
         )
 
-        # Short-circuit: Allowlist (async)
-        if await self._is_allowlisted(text):
-            logger.debug("Text allowlisted, skipping validation")
-            result.latency_ms = (time.perf_counter() - start_time) * 1000
-            self.metrics.record_validation(result)
-            return result
+        # P0 FIX: Allowlist now only skips LOW/MEDIUM severity rules, NOT critical security checks
+        # This prevents allowlist bypass attacks where malicious content is prepended with allowlisted pattern
+        is_allowlisted = await self._is_allowlisted(text)
+        if is_allowlisted:
+            logger.debug("Text allowlisted - will skip LOW/MEDIUM severity rules only")
+            result.metadata["allowlisted"] = True
 
-        # Short-circuit: Denylist (async)
+        # Short-circuit: Denylist (async) - ALWAYS checked, even for allowlisted content
         if await self._is_denylisted(text):
             logger.warning("Text denylisted")
             result.safe = False
@@ -747,6 +1003,11 @@ class GuardrailsEngine:
         # Deterministic Rule Checks (parallel async)
         async with self._lock:
             enabled_rules = [r for r in self.rules if r.enabled]
+        
+        # P0 FIX: If allowlisted, only run CRITICAL and HIGH severity rules
+        if is_allowlisted:
+            enabled_rules = [r for r in enabled_rules if r.severity in (Severity.CRITICAL, Severity.HIGH)]
+            logger.debug(f"Allowlisted content: running {len(enabled_rules)} critical/high severity rules only")
         
         # Check all rules in parallel
         rule_tasks = [self._check_rule_async(rule, text) for rule in enabled_rules]

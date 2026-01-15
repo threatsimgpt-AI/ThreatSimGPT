@@ -784,3 +784,94 @@ class TestP0SecurityFixes:
         
         assert REGEX_TIMEOUT_SECONDS <= 0.5, "Regex timeout should be <= 500ms for DoS protection"
 
+
+class TestEngineeringFixes:
+    """Tests for engineering improvements by @laradipupo."""
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_uses_deque(self):
+        """Engineering Fix: RateLimiter should use deque for O(1) operations."""
+        from collections import deque, OrderedDict
+        from threatsimgpt.llm.guardrails import RateLimiter
+        
+        rl = RateLimiter(per_user_rpm=100, burst=10)
+        
+        # Verify internal data structures are correct types
+        assert isinstance(rl._global_requests, deque), "Global requests should use deque"
+        assert isinstance(rl._user_requests, OrderedDict), "User requests should use OrderedDict"
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_lru_eviction(self):
+        """Engineering Fix: RateLimiter should evict LRU users when at capacity."""
+        from threatsimgpt.llm.guardrails import RateLimiter
+        
+        # Create rate limiter with small max_tracked_users
+        rl = RateLimiter(per_user_rpm=100, max_tracked_users=5)
+        
+        # Add 5 users
+        for i in range(5):
+            await rl.allow(f"user-{i}")
+        
+        assert len(rl._user_requests) == 5
+        
+        # Add 6th user - should evict user-0 (oldest/LRU)
+        await rl.allow("user-5")
+        
+        assert len(rl._user_requests) == 5
+        assert "user-0" not in rl._user_requests, "LRU user should be evicted"
+        assert "user-5" in rl._user_requests, "New user should be present"
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_uses_ordered_dict(self):
+        """Engineering Fix: CircuitBreaker should use OrderedDict for LRU."""
+        from collections import OrderedDict
+        from threatsimgpt.llm.guardrails import CircuitBreaker
+        
+        cb = CircuitBreaker(max_tracked=10)
+        
+        assert isinstance(cb.failures, OrderedDict), "Failures should use OrderedDict"
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_lru_access_updates(self):
+        """Engineering Fix: Accessing a validator should move it to end (LRU)."""
+        from threatsimgpt.llm.guardrails import CircuitBreaker
+        
+        cb = CircuitBreaker(max_tracked=5, failure_threshold=10)
+        
+        # Add 3 validators with failures
+        await cb.record_failure("validator-0")
+        await cb.record_failure("validator-1")
+        await cb.record_failure("validator-2")
+        
+        # Access validator-0 via should_execute (should move to end)
+        await cb.should_execute("validator-0")
+        
+        # validator-0 should now be at the end (most recently used)
+        keys = list(cb.failures.keys())
+        assert keys[-1] == "validator-0", "Accessed validator should be at end"
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_atomicity(self):
+        """Engineering Fix: All rate limiter operations should be atomic."""
+        import asyncio
+        from threatsimgpt.llm.guardrails import RateLimiter
+        
+        rl = RateLimiter(per_user_rpm=1000, burst=0, global_rpm=10000)
+        
+        # Concurrent requests from multiple users
+        async def make_requests(user_id: str, count: int):
+            results = []
+            for _ in range(count):
+                result = await rl.allow(user_id)
+                results.append(result)
+            return results
+        
+        # Run 10 users making 50 requests each concurrently
+        tasks = [make_requests(f"user-{i}", 50) for i in range(10)]
+        all_results = await asyncio.gather(*tasks)
+        
+        # All requests should succeed (under limits)
+        total_allowed = sum(sum(r) for r in all_results)
+        assert total_allowed == 500, "All concurrent requests should be allowed"
+
+

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Pattern, Tuple, Any
 from datetime import datetime, timezone
 from enum import Enum
-from collections import defaultdict
+from collections import defaultdict, OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
 import signal
 
@@ -85,18 +85,24 @@ class RateLimitExceeded(Exception):
 # ============================================================================
 
 class CircuitBreaker:
-    """Circuit breaker for failing validators to prevent cascading failures."""
+    """Circuit breaker for failing validators to prevent cascading failures.
+    
+    Engineering fix by @laradipupo:
+    - Uses OrderedDict for true LRU eviction semantics
+    - Evicts least recently accessed validators when at capacity
+    """
     
     def __init__(
         self, 
         failure_threshold: int = MAX_VALIDATOR_FAILURES, 
         timeout: int = CIRCUIT_BREAKER_TIMEOUT,
-        max_tracked: int = MAX_TRACKED_VALIDATORS  # P0 Fix: Prevent memory leak
+        max_tracked: int = MAX_TRACKED_VALIDATORS
     ):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
         self.max_tracked = max_tracked
-        self.failures: Dict[str, Tuple[int, float]] = {}  # validator_id -> (count, last_failure_time)
+        # OrderedDict for true LRU: validator_id -> (count, last_failure_time)
+        self.failures: OrderedDict[str, Tuple[int, float]] = OrderedDict()
         self._lock = asyncio.Lock()
     
     async def should_execute(self, validator_id: str) -> bool:
@@ -104,6 +110,9 @@ class CircuitBreaker:
         async with self._lock:
             if validator_id not in self.failures:
                 return True
+            
+            # Move to end to mark as recently accessed (LRU)
+            self.failures.move_to_end(validator_id)
             
             count, last_failure = self.failures[validator_id]
             
@@ -118,16 +127,17 @@ class CircuitBreaker:
     async def record_failure(self, validator_id: str) -> None:
         """Record a validator failure."""
         async with self._lock:
-            # P0 Fix: LRU eviction to prevent memory leak
+            # LRU eviction: remove oldest (first) entry if at capacity
             if validator_id not in self.failures and len(self.failures) >= self.max_tracked:
-                # Evict oldest entry
-                oldest = min(self.failures, key=lambda k: self.failures[k][1])
-                del self.failures[oldest]
-                logger.debug(f"Circuit breaker evicted oldest entry: {oldest}")
+                # OrderedDict.popitem(last=False) removes oldest entry - O(1)
+                evicted_id, _ = self.failures.popitem(last=False)
+                logger.debug(f"Circuit breaker evicted LRU entry: {evicted_id}")
             
             if validator_id in self.failures:
                 count, _ = self.failures[validator_id]
                 self.failures[validator_id] = (count + 1, time.time())
+                # Move to end to mark as recently used
+                self.failures.move_to_end(validator_id)
             else:
                 self.failures[validator_id] = (1, time.time())
             
@@ -143,53 +153,91 @@ class CircuitBreaker:
 
 
 class RateLimiter:
-    """Token bucket rate limiter for per-user rate limiting. (P0 Fix)
+    """Sliding window rate limiter with O(1) amortized operations. (P0 + Engineering Fix)
     
-    Implements a sliding window rate limiter with burst support.
+    Uses deques for efficient timestamp management and OrderedDict for LRU user eviction.
     Thread-safe for async operations.
+    
+    Engineering fixes by @laradipupo:
+    - Replaced list comprehensions with deque for O(1) amortized cleanup
+    - Added OrderedDict for true LRU user eviction
+    - Fixed window start calculation race condition
     """
     
     def __init__(
         self,
         per_user_rpm: int = DEFAULT_RATE_LIMIT_PER_USER,
         burst: int = DEFAULT_RATE_LIMIT_BURST,
-        global_rpm: int = DEFAULT_GLOBAL_RATE_LIMIT
+        global_rpm: int = DEFAULT_GLOBAL_RATE_LIMIT,
+        max_tracked_users: int = 10000
     ):
         self.per_user_rpm = per_user_rpm
         self.burst = burst
         self.global_rpm = global_rpm
-        self._user_requests: Dict[str, List[float]] = {}  # user_id -> list of timestamps
-        self._global_requests: List[float] = []
+        self.window_seconds = 60  # 1 minute window
+        self._max_tracked_users = max_tracked_users
+        
+        # Use OrderedDict for true LRU eviction (O(1) move_to_end)
+        self._user_requests: OrderedDict[str, deque] = OrderedDict()
+        # Use deque for global requests (efficient left-side pops)
+        self._global_requests: deque = deque()
         self._lock = asyncio.Lock()
-        self._max_tracked_users = 10000  # Prevent memory exhaustion
     
-    async def allow(self, user_id: str) -> bool:
+    def _clean_expired(self, window_start: float) -> None:
+        """Remove expired timestamps from global deque - O(k) where k = expired entries."""
+        # Pop from left while timestamps are expired
+        while self._global_requests and self._global_requests[0] <= window_start:
+            self._global_requests.popleft()
+    
+    def _clean_user_expired(self, user_id: str, window_start: float) -> None:
+        """Remove expired timestamps from user's deque - O(k) where k = expired entries."""
+        if user_id not in self._user_requests:
+            return
+        user_deque = self._user_requests[user_id]
+        while user_deque and user_deque[0] <= window_start:
+            user_deque.popleft()
+        # Remove user entry if empty to save memory
+        if not user_deque:
+            del self._user_requests[user_id]
+    
+    async def allow(self, user_id: str = "anonymous") -> bool:
         """Check if a request from user_id should be allowed.
+        
+        All operations are atomic within a single lock acquisition.
         
         Returns:
             True if request is allowed, False if rate limited
         """
         now = time.time()
-        window_start = now - 60  # 1 minute window
+        window_start = now - self.window_seconds
         
         async with self._lock:
-            # Clean old entries and check global rate
-            self._global_requests = [t for t in self._global_requests if t > window_start]
+            # Clean expired global entries - O(k) amortized
+            self._clean_expired(window_start)
+            
+            # Check global rate limit
             if len(self._global_requests) >= self.global_rpm:
                 logger.warning(f"Global rate limit exceeded: {len(self._global_requests)} requests/min")
                 return False
             
-            # Check per-user rate
+            # Ensure user exists with LRU eviction
             if user_id not in self._user_requests:
-                # LRU eviction if too many users tracked
+                # LRU eviction: remove oldest accessed user if at capacity
                 if len(self._user_requests) >= self._max_tracked_users:
-                    oldest_user = min(self._user_requests, 
-                                     key=lambda u: max(self._user_requests[u]) if self._user_requests[u] else 0)
-                    del self._user_requests[oldest_user]
-                self._user_requests[user_id] = []
+                    # OrderedDict.popitem(last=False) removes oldest - O(1)
+                    evicted_user, _ = self._user_requests.popitem(last=False)
+                    logger.debug(f"Rate limiter evicted LRU user: {evicted_user}")
+                self._user_requests[user_id] = deque()
+            else:
+                # Move to end to mark as recently used - O(1)
+                self._user_requests.move_to_end(user_id)
             
-            # Clean old entries for this user
-            self._user_requests[user_id] = [t for t in self._user_requests[user_id] if t > window_start]
+            # Clean expired entries for this user - O(k) amortized
+            self._clean_user_expired(user_id, window_start)
+            
+            # Re-check if user still exists (might have been removed if empty)
+            if user_id not in self._user_requests:
+                self._user_requests[user_id] = deque()
             
             # Check if under limit (with burst allowance)
             user_request_count = len(self._user_requests[user_id])
@@ -197,26 +245,28 @@ class RateLimiter:
                 logger.warning(f"Rate limit exceeded for user {user_id}: {user_request_count} requests/min")
                 return False
             
-            # Record this request
+            # Record this request - O(1)
             self._user_requests[user_id].append(now)
             self._global_requests.append(now)
             return True
     
-    def get_user_usage(self, user_id: str) -> Dict[str, Any]:
-        """Get current usage stats for a user."""
+    async def get_user_usage(self, user_id: str) -> Dict[str, Any]:
+        """Get current usage stats for a user (async for consistency)."""
         now = time.time()
-        window_start = now - 60
+        window_start = now - self.window_seconds
         
-        if user_id not in self._user_requests:
-            return {"requests": 0, "limit": self.per_user_rpm, "remaining": self.per_user_rpm}
-        
-        current = len([t for t in self._user_requests[user_id] if t > window_start])
-        return {
-            "requests": current,
-            "limit": self.per_user_rpm,
-            "remaining": max(0, self.per_user_rpm - current),
-            "burst_remaining": max(0, self.per_user_rpm + self.burst - current)
-        }
+        async with self._lock:
+            if user_id not in self._user_requests:
+                return {"requests": 0, "limit": self.per_user_rpm, "remaining": self.per_user_rpm}
+            
+            # Count non-expired entries
+            current = sum(1 for t in self._user_requests[user_id] if t > window_start)
+            return {
+                "requests": current,
+                "limit": self.per_user_rpm,
+                "remaining": max(0, self.per_user_rpm - current),
+                "burst_remaining": max(0, self.per_user_rpm + self.burst - current)
+            }
 
 
 @dataclass

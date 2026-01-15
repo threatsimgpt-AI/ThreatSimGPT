@@ -279,16 +279,46 @@ class TestAllowDenyLists:
     """Test allowlist and denylist short-circuit logic."""
 
     @pytest.mark.asyncio
-    async def test_allowlist_short_circuit(self):
+    async def test_allowlist_skips_low_severity_rules_only(self):
+        """P0 Security Fix: Allowlist no longer bypasses ALL checks.
+        
+        Allowlist now only skips LOW/MEDIUM severity rules.
+        CRITICAL and HIGH severity rules (and denylist) ALWAYS run.
+        This prevents allowlist bypass attacks.
+        """
         engine = GuardrailsEngine(rules=[])
         engine.add_deny_pattern(r"forbidden")
         engine.add_allow_pattern(r"internal-whitelist")
         
-        # Allowlist should win even if denylist matches
+        # P0 FIX: Denylist should still block even if allowlisted
+        # This is INTENTIONAL security behavior change
         result = await engine.validate("internal-whitelist contains forbidden word")
         
-        assert result.safe is True
-        assert result.action == Action.ALLOW
+        # Denylist takes precedence over allowlist for security
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+        assert result.metadata.get("allowlisted") is True  # Was allowlisted but still checked
+        
+    @pytest.mark.asyncio
+    async def test_allowlist_skips_low_severity_rules(self):
+        """Test that allowlisted content skips LOW severity rules."""
+        engine = GuardrailsEngine(rules=[])
+        engine.rules = []  # Clear defaults
+        
+        # Add a LOW severity rule
+        from threatsimgpt.llm.guardrails import Rule, Severity
+        low_rule = Rule.from_regex(
+            "low-test", "Low severity test", r"test-pattern",
+            severity=Severity.LOW, action=Action.LOG
+        )
+        await engine.add_rule(low_rule)
+        engine.add_allow_pattern(r"allowlisted")
+        
+        # Allowlisted content should skip LOW severity rule
+        result = await engine.validate("allowlisted test-pattern content")
+        
+        assert result.safe is True  # LOW severity rule skipped due to allowlist
+        assert result.metadata.get("allowlisted") is True
 
     @pytest.mark.asyncio
     async def test_denylist_blocks(self):
@@ -597,3 +627,160 @@ class TestValidationResultSerialization:
             assert "violation_type" in match
             assert "span" in match
             assert "confidence" in match
+
+
+# ============================================================================
+# P0 Security Fixes Tests (RED Team Review - Olabisi)
+# ============================================================================
+
+class TestP0SecurityFixes:
+    """Test P0 security fixes from RED Team review."""
+
+    @pytest.mark.asyncio
+    async def test_github_token_detection(self):
+        """P0 Fix: Detect GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)."""
+        engine = GuardrailsEngine()
+        
+        # Test various GitHub token formats
+        test_cases = [
+            "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012",  # PAT
+            "gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012",  # OAuth
+            "ghu_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012",  # User-to-server
+            "ghs_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012",  # Server-to-server
+            "ghr_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012",  # Refresh
+        ]
+        
+        for token in test_cases:
+            result = await engine.validate(f"Token: {token}")
+            assert result.safe is False, f"Failed to detect: {token[:10]}..."
+            assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_jwt_token_detection(self):
+        """P0 Fix: Detect JWT tokens."""
+        engine = GuardrailsEngine()
+        
+        jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        result = await engine.validate(f"JWT: {jwt}")
+        
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_private_key_detection(self):
+        """P0 Fix: Detect private keys."""
+        engine = GuardrailsEngine()
+        
+        private_key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA..."
+        result = await engine.validate(private_key)
+        
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_slack_token_detection(self):
+        """P0 Fix: Detect Slack tokens."""
+        engine = GuardrailsEngine()
+        
+        # Construct token dynamically to avoid GitHub secret scanning
+        # Real format: xoxb-{10-13 digits}-{10-13 digits}-{alphanumeric}
+        slack_token = "xox" + "b-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx"
+        result = await engine.validate(f"Slack: {slack_token}")
+        
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_stripe_key_detection(self):
+        """P0 Fix: Detect Stripe keys."""
+        engine = GuardrailsEngine()
+        
+        # Construct key dynamically to avoid GitHub secret scanning
+        # Real format: sk_live_{24+ alphanumeric}
+        stripe_key = "sk_" + "live_abcdefghijklmnopqrstuvwxyz"
+        result = await engine.validate(f"Stripe: {stripe_key}")
+        
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_db_connection_string_detection(self):
+        """P0 Fix: Detect database connection strings."""
+        engine = GuardrailsEngine()
+        
+        conn_strings = [
+            "postgresql://user:password@localhost:5432/db",
+            "mongodb://admin:secret@cluster.mongodb.net/db",
+            "mysql://root:pass123@mysql.example.com/mydb",
+        ]
+        
+        for conn in conn_strings:
+            result = await engine.validate(f"DB: {conn}")
+            assert result.safe is False, f"Failed to detect: {conn[:20]}..."
+            assert result.action == Action.BLOCK
+
+    @pytest.mark.asyncio
+    async def test_rate_limiting(self):
+        """P0 Fix: Test rate limiting functionality."""
+        from threatsimgpt.llm.guardrails import RateLimitExceeded
+        
+        engine = GuardrailsEngine(
+            enable_rate_limiting=True,
+            rate_limit_per_user=5,
+            rate_limit_burst=0
+        )
+        
+        # First 5 requests should succeed
+        for i in range(5):
+            result = await engine.validate("test", {"user_id": "test-user"})
+            assert result is not None
+        
+        # 6th request should be rate limited
+        with pytest.raises(RateLimitExceeded):
+            await engine.validate("test", {"user_id": "test-user"})
+
+    @pytest.mark.asyncio
+    async def test_rate_limiting_disabled(self):
+        """Test that rate limiting can be disabled."""
+        engine = GuardrailsEngine(enable_rate_limiting=False)
+        
+        # Should be able to make many requests without rate limiting
+        for i in range(100):
+            result = await engine.validate("test", {"user_id": "test-user"})
+            assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_allowlist_no_longer_bypasses_denylist(self):
+        """P0 Fix: Allowlist should NOT bypass denylist (security fix)."""
+        engine = GuardrailsEngine(rules=[])
+        engine.add_allow_pattern(r"trusted-source")
+        engine.add_deny_pattern(r"malicious")
+        
+        # Even with allowlist match, denylist should still block
+        result = await engine.validate("trusted-source contains malicious content")
+        
+        assert result.safe is False
+        assert result.action == Action.BLOCK
+        assert result.metadata.get("allowlisted") is True
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_memory_limit(self):
+        """P0 Fix: Circuit breaker should not grow unbounded."""
+        from threatsimgpt.llm.guardrails import CircuitBreaker, MAX_TRACKED_VALIDATORS
+        
+        cb = CircuitBreaker(max_tracked=10)
+        
+        # Record failures for 15 unique validators
+        for i in range(15):
+            await cb.record_failure(f"validator-{i}")
+        
+        # Should have evicted oldest entries, max 10 tracked
+        assert len(cb.failures) <= 10
+
+    @pytest.mark.asyncio
+    async def test_regex_timeout_is_short(self):
+        """P0 Fix: Regex timeout should be 100ms, not 2 seconds."""
+        from threatsimgpt.llm.guardrails import REGEX_TIMEOUT_SECONDS
+        
+        assert REGEX_TIMEOUT_SECONDS <= 0.5, "Regex timeout should be <= 500ms for DoS protection"
+

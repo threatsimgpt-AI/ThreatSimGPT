@@ -2,6 +2,14 @@
 
 This module provides comprehensive template creation, validation, and management
 capabilities following professional software development standards.
+
+Includes security validation for all templates to prevent:
+- Injection attacks (YAML, command, code, SQL)
+- Path traversal
+- Credential exposure
+- Malicious URLs
+- PII exposure
+- Resource abuse
 """
 
 import json
@@ -29,6 +37,11 @@ from threatsimgpt.config.models import (
     ScenarioMetadata
 )
 from threatsimgpt.config.yaml_loader import YAMLConfigLoader
+from threatsimgpt.security.template_validator import (
+    TemplateSecurityValidator,
+    SecurityValidationResult,
+    SecuritySeverity,
+)
 
 console = Console()
 
@@ -318,21 +331,134 @@ class TemplateCreationWizard:
 
 
 class TemplateManager:
-    """Professional template management and validation system."""
+    """Professional template management and validation system.
+    
+    Includes comprehensive security validation to detect:
+    - Injection attacks (YAML, command, code, SQL)
+    - Path traversal attempts
+    - Credential and secret exposure
+    - Malicious URLs
+    - PII exposure
+    - Resource abuse patterns
+    """
 
-    def __init__(self, templates_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        templates_dir: Optional[Path] = None,
+        enable_security_validation: bool = True,
+        strict_security_mode: bool = True,
+    ):
+        """Initialize the template manager.
+        
+        Args:
+            templates_dir: Directory containing templates
+            enable_security_validation: Enable security scanning of templates
+            strict_security_mode: If True, treat medium-severity issues as blocking
+        """
         self.templates_dir = templates_dir or Path("templates")
         self.loader = YAMLConfigLoader()
+        self.enable_security_validation = enable_security_validation
+        self.security_validator = TemplateSecurityValidator(
+            strict_mode=strict_security_mode
+        ) if enable_security_validation else None
+
+    def validate_template_security(
+        self,
+        template_file: Path,
+    ) -> SecurityValidationResult:
+        """Validate a template for security issues.
+        
+        Args:
+            template_file: Path to the template file
+            
+        Returns:
+            SecurityValidationResult with all findings
+            
+        Raises:
+            ValueError: If security validation is disabled
+        """
+        if not self.security_validator:
+            raise ValueError("Security validation is disabled")
+        
+        return self.security_validator.validate_template_file(template_file)
+
+    def validate_all_templates_security(self) -> Dict[str, Any]:
+        """Validate all templates for security issues.
+        
+        Returns:
+            Dictionary with security validation results for all templates
+        """
+        if not self.security_validator:
+            return {"error": "Security validation is disabled"}
+        
+        results = {
+            "secure": [],
+            "insecure": [],
+            "statistics": {
+                "total": 0,
+                "secure_count": 0,
+                "insecure_count": 0,
+                "critical_findings": 0,
+                "high_findings": 0,
+                "medium_findings": 0,
+                "low_findings": 0,
+            }
+        }
+        
+        if not self.templates_dir.exists():
+            return results
+        
+        template_files = list(self.templates_dir.glob("*.yaml")) + list(self.templates_dir.glob("*.yml"))
+        results["statistics"]["total"] = len(template_files)
+        
+        for template_file in template_files:
+            security_result = self.security_validator.validate_template_file(template_file)
+            
+            template_info = {
+                "file": template_file.name,
+                "validation_id": security_result.validation_id,
+                "findings_count": len(security_result.findings),
+                "critical": security_result.critical_count,
+                "high": security_result.high_count,
+                "medium": security_result.medium_count,
+                "low": security_result.low_count,
+            }
+            
+            if security_result.is_secure:
+                results["secure"].append(template_info)
+                results["statistics"]["secure_count"] += 1
+            else:
+                template_info["findings"] = [
+                    {
+                        "severity": f.severity.value,
+                        "category": f.category.value,
+                        "title": f.title,
+                        "location": f.location,
+                    }
+                    for f in security_result.blocking_findings
+                ]
+                results["insecure"].append(template_info)
+                results["statistics"]["insecure_count"] += 1
+            
+            # Aggregate findings
+            results["statistics"]["critical_findings"] += security_result.critical_count
+            results["statistics"]["high_findings"] += security_result.high_count
+            results["statistics"]["medium_findings"] += security_result.medium_count
+            results["statistics"]["low_findings"] += security_result.low_count
+        
+        return results
 
     def validate_all_templates(self) -> Dict[str, Any]:
-        """Comprehensive validation of all templates."""
+        """Comprehensive validation of all templates (schema + security)."""
         results = {
             "valid": [],
             "invalid": [],
+            "security_issues": [],
             "statistics": {
                 "total": 0,
                 "valid_count": 0,
                 "invalid_count": 0,
+                "security_issues_count": 0,
                 "success_rate": 0.0
             }
         }
@@ -344,8 +470,33 @@ class TemplateManager:
         results["statistics"]["total"] = len(template_files)
 
         for template_file in template_files:
+            # First, run security validation if enabled
+            if self.security_validator:
+                security_result = self.security_validator.validate_template_file(template_file)
+                if not security_result.is_secure:
+                    results["security_issues"].append({
+                        "file": template_file.name,
+                        "findings": [
+                            {
+                                "severity": f.severity.value,
+                                "category": f.category.value,
+                                "title": f.title,
+                                "remediation": f.remediation,
+                            }
+                            for f in security_result.blocking_findings[:5]  # Limit to top 5
+                        ]
+                    })
+                    results["statistics"]["security_issues_count"] += 1
+                    # Don't count as valid if security issues
+                    results["invalid"].append({
+                        "file": template_file.name,
+                        "error": f"Security validation failed: {security_result.critical_count} critical, {security_result.high_count} high severity issues"
+                    })
+                    results["statistics"]["invalid_count"] += 1
+                    continue
+            
             try:
-                # Use load_and_validate_scenario directly
+                # Schema validation
                 scenario = self.loader.load_and_validate_scenario(template_file)
 
                 # Extract enum values properly
@@ -356,7 +507,8 @@ class TemplateManager:
                     "file": template_file.name,
                     "name": scenario.metadata.name,
                     "threat_type": threat_type_value,
-                    "difficulty": difficulty_value
+                    "difficulty": difficulty_value,
+                    "security_validated": self.security_validator is not None,
                 })
                 results["statistics"]["valid_count"] += 1
 

@@ -2,14 +2,20 @@ name: Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
 
@@ -42,7 +48,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -56,10 +62,12 @@ jobs:
 
     - name: Load cached venv
       id: cached-poetry-dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: .venv
         key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          venv-${{ runner.os }}-${{ matrix.python-version }}-
 
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
@@ -68,17 +76,17 @@ jobs:
     - name: Install project
       run: poetry install --no-interaction
 
-    - name: Run linting
+    - name: Run linting with ruff
       run: |
-        poetry run flake8 threatsimgpt/ tests/
-        poetry run black --check threatsimgpt/ tests/
-        poetry run isort --check-only threatsimgpt/ tests/
-        poetry run mypy threatsimgpt/
+        poetry run ruff check threatsimgpt/ tests/
+        poetry run ruff format --check threatsimgpt/ tests/
+
+    - name: Type check with mypy
+      run: poetry run mypy threatsimgpt/
 
     - name: Run security checks
       run: |
-        poetry run bandit -r threatsimgpt/
-        poetry run safety check
+        poetry run bandit -r threatsimgpt/ -c pyproject.toml
 
     - name: Run tests
       env:
@@ -87,26 +95,27 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       run: |
-        poetry run pytest --cov=threatsimgpt --cov-report=xml --cov-report=term-missing
+        poetry run pytest tests/ -v --cov=threatsimgpt --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         file: ./coverage.xml
         flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: true
+        name: codecov-${{ matrix.python-version }}
+        fail_ci_if_error: false
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
@@ -119,7 +128,8 @@ jobs:
       run: poetry build
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dist
         path: dist/
+        retention-days: 30

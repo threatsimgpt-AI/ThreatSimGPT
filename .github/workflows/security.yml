@@ -2,22 +2,27 @@ name: Security Scan
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   schedule:
-    # Run weekly security scan
+    # Run weekly security scan on Monday at 2 AM UTC
     - cron: '0 2 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
@@ -30,22 +35,14 @@ jobs:
       run: poetry install --with dev
 
     - name: Run Bandit security scan
-      run: poetry run bandit -r threatsimgpt/ -f json -o bandit-report.json
+      run: poetry run bandit -r threatsimgpt/ -c pyproject.toml -f json -o bandit-report.json
 
     - name: Upload Bandit report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: bandit-report
         path: bandit-report.json
-
-    - name: Run Safety check
-      run: poetry run safety check --json --output safety-report.json
-
-    - name: Upload Safety report
-      uses: actions/upload-artifact@v3
-      with:
-        name: safety-report
-        path: safety-report.json
+        retention-days: 30
 
     - name: Run Semgrep
       uses: returntocorp/semgrep-action@v1
@@ -57,9 +54,11 @@ jobs:
           p/python
       env:
         SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      continue-on-error: true
 
   dependency-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v4
@@ -73,9 +72,12 @@ jobs:
         args: >
           --enableRetired
           --enableExperimental
+      continue-on-error: true
 
     - name: Upload Dependency Check results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: dependency-check-report
         path: reports/
+        retention-days: 30

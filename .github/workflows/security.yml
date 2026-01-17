@@ -33,7 +33,7 @@ jobs:
       run: poetry run bandit -r threatsimgpt/ -f json -o bandit-report.json
 
     - name: Upload Bandit report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: bandit-report
         path: bandit-report.json
@@ -42,7 +42,7 @@ jobs:
       run: poetry run safety check --json --output safety-report.json
 
     - name: Upload Safety report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: safety-report
         path: safety-report.json
@@ -75,7 +75,7 @@ jobs:
           --enableExperimental
 
     - name: Upload Dependency Check results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dependency-check-report
         path: reports/

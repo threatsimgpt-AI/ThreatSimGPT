@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class RuleFormat(str, Enum):
@@ -262,10 +262,8 @@ class DetectionRule(BaseModel):
             RuleSeverity.CRITICAL: 5,
         }
         return levels.get(self.severity, 3)
-    
-    class Config:
-        """Pydantic configuration."""
-        use_enum_values = True
+
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class RuleGenerationRequest(BaseModel):

@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 class ThreatType(str, Enum):
@@ -290,12 +290,11 @@ class ThreatScenario(BaseModel):
 
         return self
 
-    class Config:
-        """Pydantic configuration."""
-        use_enum_values = True
-        validate_assignment = True
-        extra = "forbid"  # Reject unknown fields
-        json_schema_extra = {
+    model_config = ConfigDict(
+        use_enum_values=True,
+        validate_assignment=True,
+        extra="forbid",
+        json_schema_extra={
             "example": {
                 "metadata": {
                     "name": "Executive Phishing Campaign",
@@ -329,3 +328,4 @@ class ThreatScenario(BaseModel):
                 }
             }
         }
+    )

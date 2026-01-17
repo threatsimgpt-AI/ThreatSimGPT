@@ -377,7 +377,8 @@ class TestCircuitBreaker:
         await chain._is_circuit_open(chain._providers["failing"])
         assert chain.get_circuit_state("failing")["state"] == CircuitState.HALF_OPEN.value
     
-    def test_reset_circuit(self, chain):
+    @pytest.mark.asyncio
+    async def test_reset_circuit(self, chain):
         """Test manual circuit reset."""
         provider = MockProvider(name="test")
         chain.add_provider("test", provider)
@@ -388,7 +389,7 @@ class TestCircuitBreaker:
             entry.circuit_state.record_failure()
         entry.circuit_state.state = CircuitState.OPEN
         
-        assert chain.reset_circuit("test") is True
+        assert await chain.reset_circuit("test") is True
         assert chain.get_circuit_state("test")["state"] == CircuitState.CLOSED.value
         assert chain.get_circuit_state("test")["failure_count"] == 0
 

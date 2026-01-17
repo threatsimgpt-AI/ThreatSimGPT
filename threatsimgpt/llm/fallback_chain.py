@@ -14,31 +14,21 @@ import asyncio
 import logging
 import time
 import random
-import hashlib
-from abc import ABC, abstractmethod
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from enum import Enum
 from typing import (
     Any,
-    Callable,
     Dict,
-    Generic,
     List,
     Optional,
-    Protocol,
-    Tuple,
-    TypeVar,
-    Union,
 )
-from contextlib import asynccontextmanager
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
 from pydantic_settings import BaseSettings
 
 from .base import BaseLLMProvider, LLMResponse
-from .exceptions import LLMError, ProviderError, RateLimitError
+from .exceptions import LLMError, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -635,15 +625,19 @@ class ModelFallbackChain:
             "last_success_time": state.last_success_time,
         }
     
-    def reset_circuit(self, name: str) -> bool:
-        """Manually reset circuit breaker for a provider."""
-        if name not in self._providers:
-            return False
+    async def reset_circuit(self, name: str) -> bool:
+        """Manually reset circuit breaker for a provider.
         
-        entry = self._providers[name]
-        entry.circuit_state = CircuitBreakerState()
-        logger.info(f"Circuit for '{name}' manually reset")
-        return True
+        Uses async lock to prevent race conditions with concurrent requests.
+        """
+        async with self._lock:
+            if name not in self._providers:
+                return False
+            
+            entry = self._providers[name]
+            entry.circuit_state = CircuitBreakerState()
+            logger.info(f"Circuit for '{name}' manually reset")
+            return True
     
     # ========================================================================
     # Health Checks
@@ -818,11 +812,12 @@ class ModelFallbackChain:
         
         elif self._selection_strategy == SelectionStrategy.WEIGHTED:
             # Shuffle with weights (Fisher-Yates weighted)
+            # Note: Using standard random is fine here - not for cryptographic purposes
             weighted = list(available)
-            random.shuffle(weighted)  # Base randomization
+            random.shuffle(weighted)  # nosec B311 - not security-sensitive
             # Sort by weight descending with randomness
             weighted.sort(
-                key=lambda e: e.weight * random.random(),
+                key=lambda e: e.weight * random.random(),  # nosec B311
                 reverse=True
             )
             return weighted
@@ -851,9 +846,9 @@ class ModelFallbackChain:
         delay = base_delay * (2 ** attempt)
         delay = min(delay, max_delay)
         
-        # Add jitter: ±jitter%
+        # Add jitter: ±jitter% (standard random is fine for jitter - not security-sensitive)
         jitter_amount = delay * jitter
-        delay += random.uniform(-jitter_amount, jitter_amount)
+        delay += random.uniform(-jitter_amount, jitter_amount)  # nosec B311
         
         return max(0, delay)
     

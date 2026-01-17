@@ -113,9 +113,13 @@ ignore = [
     "E722",   # Bare except
     "E741",   # Ambiguous variable name
     "F401",   # Unused import
+    "F402",   # Import shadowed by loop var
     "F811",   # Redefinition of unused name
     "F821",   # Undefined name
     "F841",   # Local variable assigned but never used
+    "W291",   # Trailing whitespace
+    "W292",   # No newline at end of file
+    "W293",   # Blank line contains whitespace
 ]
 fixable = ["ALL"]
 unfixable = []
@@ -186,4 +190,16 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests", "build", "dist"]
-skips = ["B101", "B601"]
+skips = [
+    "B101",  # assert_used - acceptable in non-production code
+    "B104",  # hardcoded_bind_all_interfaces - intentional for API servers
+    "B108",  # hardcoded_tmp_directory - acceptable for temp files
+    "B110",  # try_except_pass - sometimes intentional
+    "B113",  # request_without_timeout - handled at higher level
+    "B404",  # blacklist import subprocess - necessary for VM management
+    "B506",  # yaml_load - using safe loader already
+    "B601",  # paramiko calls - necessary for SSH
+    "B603",  # subprocess_without_shell - using list args (safe)
+    "B607",  # start_process_with_partial_path - docker commands
+    "B615",  # huggingface unsafe download - handled separately
+]

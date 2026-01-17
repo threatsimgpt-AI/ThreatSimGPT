@@ -55,20 +55,20 @@ __version__ = "1.0.0"
 from .models import (
     FeedbackType,
     QualityDimension,
+    ImprovementCategory,
     QualityMetrics,
-    LearningInsight,
+    ScenarioLearning,
+    PlaybookLearning,
     ImprovementSuggestion,
-    ScenarioFeedback,
-    PlaybookFeedback,
-    EvolutionCycle,
-    FeedbackStore,
+    FeedbackEntry,
+    GenerationCycle,
+    CycleMetrics,
 )
 
 from .analyzer import (
     ScenarioAnalyzer,
     PlaybookAnalyzer,
-    FeedbackAggregator,
-    CrossAnalyzer,
+    QualityScorer,
 )
 
 from .enhancer import (
@@ -94,18 +94,18 @@ __all__ = [
     # Models
     "FeedbackType",
     "QualityDimension",
+    "ImprovementCategory",
     "QualityMetrics",
-    "LearningInsight",
+    "ScenarioLearning",
+    "PlaybookLearning",
     "ImprovementSuggestion",
-    "ScenarioFeedback",
-    "PlaybookFeedback",
-    "EvolutionCycle",
-    "FeedbackStore",
+    "FeedbackEntry",
+    "GenerationCycle",
+    "CycleMetrics",
     # Analysis
     "ScenarioAnalyzer",
     "PlaybookAnalyzer",
-    "FeedbackAggregator",
-    "CrossAnalyzer",
+    "QualityScorer",
     # Enhancement
     "ScenarioEnhancer",
     "PlaybookEnhancer",

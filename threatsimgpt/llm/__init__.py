@@ -60,6 +60,18 @@ from .validation import (
     SafetyResult,
 )
 
+# Model fallback chain for high availability
+from .fallback_chain import (
+    ModelFallbackChain,
+    FallbackChainConfig,
+    SelectionStrategy,
+    CircuitState,
+    HealthStatus,
+    AllProvidersFailedError,
+    CircuitOpenError,
+    create_fallback_chain,
+)
+
 __all__ = [
     # Models and enums
     "ContentType",
@@ -93,4 +105,14 @@ __all__ = [
     "SafetyFilter",
     "SafetyLevel",
     "SafetyResult",
+
+    # Model fallback chain
+    "ModelFallbackChain",
+    "FallbackChainConfig",
+    "SelectionStrategy",
+    "CircuitState",
+    "HealthStatus",
+    "AllProvidersFailedError",
+    "CircuitOpenError",
+    "create_fallback_chain",
 ]

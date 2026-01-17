@@ -261,9 +261,14 @@ class MetricsCollector:
         self,
         metrics: deque[RequestMetric]
     ) -> List[RequestMetric]:
-        """Filter metrics within the time window."""
+        """Filter metrics within the time window.
+        
+        Note: Creates a list copy to avoid RuntimeError from deque mutation
+        during iteration in concurrent environments.
+        """
         cutoff = time.monotonic() - self._window_seconds
-        return [m for m in metrics if m.timestamp > cutoff]
+        # Safe copy to prevent "deque mutated during iteration" errors
+        return [m for m in list(metrics) if m.timestamp > cutoff]
     
     def get_availability(self, provider: Optional[str] = None) -> float:
         """Get availability ratio (0.0 to 1.0)."""
@@ -540,66 +545,78 @@ class ModelFallbackChain:
     # Circuit Breaker
     # ========================================================================
     
-    def _is_circuit_open(self, entry: ProviderEntry) -> bool:
-        """Check if circuit breaker is open for provider."""
-        state = entry.circuit_state
+    async def _is_circuit_open(self, entry: ProviderEntry) -> bool:
+        """Check if circuit breaker is open for provider.
         
-        if state.state == CircuitState.CLOSED:
+        Uses async lock to prevent race conditions during state transitions.
+        """
+        async with self._lock:
+            state = entry.circuit_state
+            
+            if state.state == CircuitState.CLOSED:
+                return False
+            
+            if state.state == CircuitState.OPEN:
+                # Check if recovery timeout has passed
+                if state.last_failure_time is not None:
+                    elapsed = time.monotonic() - state.last_failure_time
+                    if elapsed >= self._config.circuit_recovery_timeout:
+                        # Transition to half-open
+                        state.state = CircuitState.HALF_OPEN
+                        state.half_open_calls = 0
+                        logger.info(f"Circuit for '{entry.name}' transitioning to half-open")
+                        return False
+                return True
+            
+            if state.state == CircuitState.HALF_OPEN:
+                # Allow limited calls in half-open state
+                return state.half_open_calls >= self._config.circuit_half_open_max_calls
+            
             return False
-        
-        if state.state == CircuitState.OPEN:
-            # Check if recovery timeout has passed
-            if state.last_failure_time is not None:
-                elapsed = time.monotonic() - state.last_failure_time
-                if elapsed >= self._config.circuit_recovery_timeout:
-                    # Transition to half-open
-                    state.state = CircuitState.HALF_OPEN
-                    state.half_open_calls = 0
-                    logger.info(f"Circuit for '{entry.name}' transitioning to half-open")
-                    return False
-            return True
-        
-        if state.state == CircuitState.HALF_OPEN:
-            # Allow limited calls in half-open state
-            return state.half_open_calls >= self._config.circuit_half_open_max_calls
-        
-        return False
     
-    def _record_circuit_success(self, entry: ProviderEntry) -> None:
-        """Record successful call for circuit breaker."""
-        state = entry.circuit_state
-        state.record_success()
+    async def _record_circuit_success(self, entry: ProviderEntry) -> None:
+        """Record successful call for circuit breaker.
         
-        if state.state == CircuitState.HALF_OPEN:
-            state.half_open_calls += 1
-            # Successful calls in half-open -> close circuit
-            if state.consecutive_successes >= self._config.circuit_half_open_max_calls:
-                state.state = CircuitState.CLOSED
-                state.failure_count = 0
-                logger.info(f"Circuit for '{entry.name}' closed after recovery")
-        
-        elif state.state == CircuitState.CLOSED:
-            # Reset failure count on success
-            if state.failure_count > 0:
-                state.failure_count = max(0, state.failure_count - 1)
+        Uses async lock to prevent race conditions during state updates.
+        """
+        async with self._lock:
+            state = entry.circuit_state
+            state.record_success()
+            
+            if state.state == CircuitState.HALF_OPEN:
+                state.half_open_calls += 1
+                # Successful calls in half-open -> close circuit
+                if state.consecutive_successes >= self._config.circuit_half_open_max_calls:
+                    state.state = CircuitState.CLOSED
+                    state.failure_count = 0
+                    logger.info(f"Circuit for '{entry.name}' closed after recovery")
+            
+            elif state.state == CircuitState.CLOSED:
+                # Reset failure count on success
+                if state.failure_count > 0:
+                    state.failure_count = max(0, state.failure_count - 1)
     
-    def _record_circuit_failure(self, entry: ProviderEntry, error: Exception) -> None:
-        """Record failed call for circuit breaker."""
-        state = entry.circuit_state
-        state.record_failure()
+    async def _record_circuit_failure(self, entry: ProviderEntry, error: Exception) -> None:
+        """Record failed call for circuit breaker.
         
-        if state.state == CircuitState.HALF_OPEN:
-            # Failure in half-open -> reopen circuit
-            state.state = CircuitState.OPEN
-            logger.warning(f"Circuit for '{entry.name}' reopened after failure in half-open")
-        
-        elif state.state == CircuitState.CLOSED:
-            # Check if threshold reached
-            if state.failure_count >= self._config.circuit_failure_threshold:
+        Uses async lock to prevent race conditions during state updates.
+        """
+        async with self._lock:
+            state = entry.circuit_state
+            state.record_failure()
+            
+            if state.state == CircuitState.HALF_OPEN:
+                # Failure in half-open -> reopen circuit
                 state.state = CircuitState.OPEN
-                logger.warning(
-                    f"Circuit for '{entry.name}' opened after {state.failure_count} failures"
-                )
+                logger.warning(f"Circuit for '{entry.name}' reopened after failure in half-open")
+            
+            elif state.state == CircuitState.CLOSED:
+                # Check if threshold reached
+                if state.failure_count >= self._config.circuit_failure_threshold:
+                    state.state = CircuitState.OPEN
+                    logger.warning(
+                        f"Circuit for '{entry.name}' opened after {state.failure_count} failures"
+                    )
     
     def get_circuit_state(self, name: str) -> Optional[Dict[str, Any]]:
         """Get circuit breaker state for a provider."""
@@ -691,22 +708,31 @@ class ModelFallbackChain:
         return entry.health
     
     async def check_all_health(self) -> Dict[str, ProviderHealth]:
-        """Check health of all providers concurrently."""
-        tasks = {
-            name: self.check_provider_health(name)
-            for name in self._providers.keys()
-        }
+        """Check health of all providers concurrently.
         
+        Uses asyncio.gather for true concurrent execution of health checks.
+        """
+        names = list(self._providers.keys())
+        if not names:
+            return {}
+        
+        # Create tasks for concurrent execution
+        tasks = [self.check_provider_health(name) for name in names]
+        
+        # Execute all health checks concurrently
+        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Map results back to provider names
         results = {}
-        for name, task in tasks.items():
-            try:
-                results[name] = await task
-            except Exception as e:
-                logger.error(f"Health check error for '{name}': {e}")
+        for name, result in zip(names, results_list):
+            if isinstance(result, Exception):
+                logger.error(f"Health check error for '{name}': {result}")
                 results[name] = ProviderHealth(
                     status=HealthStatus.UNKNOWN,
-                    error_message=str(e)
+                    error_message=str(result)
                 )
+            else:
+                results[name] = result
         
         return results
     
@@ -748,7 +774,7 @@ class ModelFallbackChain:
     # Provider Selection
     # ========================================================================
     
-    def _get_available_providers(self) -> List[ProviderEntry]:
+    async def _get_available_providers(self) -> List[ProviderEntry]:
         """Get list of available providers (enabled, healthy, circuit closed)."""
         available = []
         
@@ -757,8 +783,8 @@ class ModelFallbackChain:
             if not entry.enabled:
                 continue
             
-            # Check circuit breaker
-            if self._is_circuit_open(entry):
+            # Check circuit breaker (async for thread safety)
+            if await self._is_circuit_open(entry):
                 continue
             
             # Check health (allow HEALTHY, DEGRADED, and UNKNOWN)
@@ -769,9 +795,9 @@ class ModelFallbackChain:
         
         return available
     
-    def _select_providers(self) -> List[ProviderEntry]:
+    async def _select_providers(self) -> List[ProviderEntry]:
         """Select providers based on configured strategy."""
-        available = self._get_available_providers()
+        available = await self._get_available_providers()
         
         if not available:
             # Fallback: return all enabled providers (even unhealthy/circuit-open)
@@ -856,8 +882,8 @@ class ModelFallbackChain:
             
             latency_ms = (time.monotonic() - start_time) * 1000
             
-            # Record success
-            self._record_circuit_success(entry)
+            # Record success (async for thread safety)
+            await self._record_circuit_success(entry)
             self._metrics.record(
                 provider=entry.name,
                 success=True,
@@ -875,7 +901,7 @@ class ModelFallbackChain:
         
         except asyncio.TimeoutError as e:
             latency_ms = (time.monotonic() - start_time) * 1000
-            self._record_circuit_failure(entry, e)
+            await self._record_circuit_failure(entry, e)
             self._metrics.record(
                 provider=entry.name,
                 success=False,
@@ -887,7 +913,7 @@ class ModelFallbackChain:
         
         except Exception as e:
             latency_ms = (time.monotonic() - start_time) * 1000
-            self._record_circuit_failure(entry, e)
+            await self._record_circuit_failure(entry, e)
             self._metrics.record(
                 provider=entry.name,
                 success=False,
@@ -934,8 +960,8 @@ class ModelFallbackChain:
                 message="No providers configured"
             )
         
-        # Get ordered list of providers to try
-        providers_to_try = self._select_providers()
+        # Get ordered list of providers to try (async for thread safety)
+        providers_to_try = await self._select_providers()
         
         # If preferred provider specified and available, try it first
         if preferred_provider and preferred_provider in self._providers:
@@ -955,8 +981,8 @@ class ModelFallbackChain:
         errors: Dict[str, Exception] = {}
         
         for entry in providers_to_try:
-            # Skip if circuit is open
-            if self._is_circuit_open(entry):
+            # Skip if circuit is open (async for thread safety)
+            if await self._is_circuit_open(entry):
                 errors[entry.name] = CircuitOpenError(entry.name)
                 continue
             
@@ -1019,8 +1045,11 @@ class ModelFallbackChain:
         """Get comprehensive metrics summary."""
         return self._metrics.get_summary()
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get full chain status including all providers."""
+    async def get_status(self) -> Dict[str, Any]:
+        """Get full chain status including all providers.
+        
+        Note: This is async because it checks circuit breaker states.
+        """
         providers_status = {}
         
         for name, entry in self._providers.items():
@@ -1038,13 +1067,16 @@ class ModelFallbackChain:
         overall_availability = self.get_availability()
         target_met = overall_availability >= self._config.target_availability
         
+        # Get available providers count (async for thread safety)
+        available_providers = await self._get_available_providers()
+        
         return {
             "strategy": self._selection_strategy.value,
             "target_availability": self._config.target_availability,
             "current_availability": overall_availability,
             "target_met": target_met,
             "total_providers": len(self._providers),
-            "available_providers": len(self._get_available_providers()),
+            "available_providers": len(available_providers),
             "health_checks_running": self._health_check_task is not None,
             "providers": providers_status,
             "metrics": self._metrics.get_summary(),

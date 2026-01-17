@@ -373,8 +373,8 @@ class TestCircuitBreaker:
         # Wait for recovery timeout
         await asyncio.sleep(config.circuit_recovery_timeout + 0.1)
         
-        # Now the circuit should transition to half-open on next check
-        chain._is_circuit_open(chain._providers["failing"])
+        # Now the circuit should transition to half-open on next check (async)
+        await chain._is_circuit_open(chain._providers["failing"])
         assert chain.get_circuit_state("failing")["state"] == CircuitState.HALF_OPEN.value
     
     def test_reset_circuit(self, chain):
@@ -481,7 +481,8 @@ class TestHealthChecks:
 class TestSelectionStrategies:
     """Test provider selection strategies."""
     
-    def test_priority_strategy(self, config):
+    @pytest.mark.asyncio
+    async def test_priority_strategy(self, config):
         """Test priority-based selection."""
         chain = ModelFallbackChain(
             config=config,
@@ -492,12 +493,13 @@ class TestSelectionStrategies:
         chain.add_provider("high", MockProvider(name="high"), priority=0)
         chain.add_provider("mid", MockProvider(name="mid"), priority=1)
         
-        selected = chain._select_providers()
+        selected = await chain._select_providers()
         names = [p.name for p in selected]
         
         assert names == ["high", "mid", "low"]
     
-    def test_round_robin_strategy(self, config):
+    @pytest.mark.asyncio
+    async def test_round_robin_strategy(self, config):
         """Test round-robin selection."""
         chain = ModelFallbackChain(
             config=config,
@@ -509,15 +511,16 @@ class TestSelectionStrategies:
         chain.add_provider("p3", MockProvider(name="p3"))
         
         # Get selections and check rotation
-        first = chain._select_providers()
-        second = chain._select_providers()
-        third = chain._select_providers()
+        first = await chain._select_providers()
+        second = await chain._select_providers()
+        third = await chain._select_providers()
         
         # Each should start with different provider
         assert first[0].name != second[0].name
         assert second[0].name != third[0].name
     
-    def test_latency_strategy(self, config):
+    @pytest.mark.asyncio
+    async def test_latency_strategy(self, config):
         """Test latency-based selection."""
         chain = ModelFallbackChain(
             config=config,
@@ -541,24 +544,26 @@ class TestSelectionStrategies:
         chain._providers["fast"].health.status = HealthStatus.HEALTHY
         chain._providers["medium"].health.status = HealthStatus.HEALTHY
         
-        selected = chain._select_providers()
+        selected = await chain._select_providers()
         names = [p.name for p in selected]
         
         assert names == ["fast", "medium", "slow"]
     
-    def test_excludes_disabled_providers(self, chain):
+    @pytest.mark.asyncio
+    async def test_excludes_disabled_providers(self, chain):
         """Test that disabled providers are excluded."""
         chain.add_provider("enabled", MockProvider(name="enabled"))
         chain.add_provider("disabled", MockProvider(name="disabled"))
         chain.set_provider_enabled("disabled", False)
         
-        available = chain._get_available_providers()
+        available = await chain._get_available_providers()
         names = [p.name for p in available]
         
         assert "enabled" in names
         assert "disabled" not in names
     
-    def test_excludes_unhealthy_providers(self, chain):
+    @pytest.mark.asyncio
+    async def test_excludes_unhealthy_providers(self, chain):
         """Test that unhealthy providers are excluded."""
         chain.add_provider("healthy", MockProvider(name="healthy"))
         chain.add_provider("unhealthy", MockProvider(name="unhealthy"))
@@ -566,7 +571,7 @@ class TestSelectionStrategies:
         chain._providers["healthy"].health.status = HealthStatus.HEALTHY
         chain._providers["unhealthy"].health.status = HealthStatus.UNHEALTHY
         
-        available = chain._get_available_providers()
+        available = await chain._get_available_providers()
         names = [p.name for p in available]
         
         assert "healthy" in names
@@ -678,7 +683,7 @@ class TestStatus:
         
         await chain.generate("Test")
         
-        status = chain.get_status()
+        status = await chain.get_status()
         
         assert status["strategy"] == SelectionStrategy.PRIORITY.value
         assert status["total_providers"] == 2

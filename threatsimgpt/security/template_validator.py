@@ -17,7 +17,7 @@ import ipaddress
 import re
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -471,7 +471,7 @@ class TemplateSecurityValidator:
         Returns:
             SecurityValidationResult with all findings
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         findings: List[SecurityFinding] = []
         
         # Parse template if needed
@@ -636,7 +636,7 @@ class TemplateSecurityValidator:
         start_time: datetime,
     ) -> SecurityValidationResult:
         """Create a SecurityValidationResult from findings."""
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         duration_ms = (end_time - start_time).total_seconds() * 1000
         
         # Determine if template is secure

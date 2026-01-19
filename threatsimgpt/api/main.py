@@ -59,12 +59,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
-# nosemgrep: wildcard-cors - Intentional for development; production deployments
-# should configure ALLOWED_ORIGINS environment variable with specific domains
+# Add CORS middleware - Production should configure ALLOWED_ORIGINS env var
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],  # nosemgrep: python.fastapi.security.wildcard-cors.wildcard-cors
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

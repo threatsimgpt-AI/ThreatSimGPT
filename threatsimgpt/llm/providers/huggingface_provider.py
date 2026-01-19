@@ -119,7 +119,7 @@ class HuggingFaceProvider(LocalLLMProvider):
                 if self._tokenizer.eos_token is not None:
                     self._tokenizer.pad_token = self._tokenizer.eos_token
                 else:
-                    self._tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                    self._tokenizer.add_special_tokens({'pad_token': '[PAD]'})  # nosec B105
 
             # Determine torch dtype
             if self.torch_dtype == 'auto':

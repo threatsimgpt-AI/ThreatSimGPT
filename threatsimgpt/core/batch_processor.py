@@ -662,8 +662,8 @@ class BatchProcessor:
                         self.config.retry_base_delay_seconds * (2 ** (attempt - 1)),
                         self.config.retry_max_delay_seconds,
                     )
-                    # Add jitter (10-30% of delay)
-                    jitter = delay * (0.1 + 0.2 * random.random())
+                    # Add jitter (10-30% of delay) - not cryptographic, just timing variance
+                    jitter = delay * (0.1 + 0.2 * random.random())  # nosec B311
                     delay += jitter
                     
                     logger.debug(

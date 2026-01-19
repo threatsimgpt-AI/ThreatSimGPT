@@ -163,6 +163,8 @@ class TemplateConfig:
 
     Maps template names to Proxmox VM IDs and default settings.
     """
+    # NOTE: These are INTENTIONAL default credentials for isolated lab VMs
+    # used in threat simulation training. They are NOT production credentials.
     templates: dict = field(default_factory=lambda: {
         "ubuntu-attacker": {
             "vmid": 9000,
@@ -170,7 +172,7 @@ class TemplateConfig:
             "cpu_cores": 4,
             "memory_mb": 8192,
             "default_user": "root",
-            "default_password": "threatsimgpt",
+            "default_password": "threatsimgpt",  # nosec B105 - intentional lab credential
             "tools": ["nmap", "metasploit", "gobuster", "nuclei", "hydra"]
         },
         "ubuntu-target": {
@@ -179,7 +181,7 @@ class TemplateConfig:
             "cpu_cores": 2,
             "memory_mb": 4096,
             "default_user": "admin",
-            "default_password": "vulnerable123",
+            "default_password": "vulnerable123",  # nosec B105 - intentional lab credential
         },
         "windows-target": {
             "vmid": 9002,
@@ -187,7 +189,7 @@ class TemplateConfig:
             "cpu_cores": 2,
             "memory_mb": 4096,
             "default_user": "admin",
-            "default_password": "vulnerable123",
+            "default_password": "vulnerable123",  # nosec B105 - intentional lab credential
         },
     })
 

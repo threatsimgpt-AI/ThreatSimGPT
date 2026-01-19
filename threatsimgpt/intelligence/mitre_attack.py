@@ -522,8 +522,8 @@ class MITREATTACKEngine:
                 logger.warning(f"Network error on attempt {attempt + 1}: {e}")
             
             if attempt < self.MAX_RETRY_ATTEMPTS - 1:
-                # Exponential backoff with jitter
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                # Exponential backoff with jitter (not security-sensitive)
+                wait_time = (2 ** attempt) + random.uniform(0, 1)  # nosec B311
                 logger.info(f"Retrying in {wait_time:.1f}s (attempt {attempt + 2}/{self.MAX_RETRY_ATTEMPTS})")
                 await asyncio.sleep(wait_time)
         

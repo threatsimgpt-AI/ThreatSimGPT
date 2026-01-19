@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Development setup script for ThreatSimGPT."""
 
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,8 @@ def run_command(command: str, description: str) -> bool:
     """Run a command and return success status."""
     print(f" {description}...")
     try:
-        subprocess.run(command, shell=True, check=True, cwd=Path.cwd())
+        # nosemgrep: subprocess-shell-true - dev script with trusted commands
+        subprocess.run(shlex.split(command), check=True, cwd=Path.cwd())
         print(f" {description} completed successfully")
         return True
     except subprocess.CalledProcessError as e:

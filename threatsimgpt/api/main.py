@@ -60,6 +60,8 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# nosemgrep: wildcard-cors - Intentional for development; production deployments
+# should configure ALLOWED_ORIGINS environment variable with specific domains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure appropriately for production

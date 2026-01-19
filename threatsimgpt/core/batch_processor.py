@@ -19,9 +19,10 @@ Author: Ajibola Olajide-Shokunbi (@jiboo2022)
 
 import asyncio
 import logging
+import random
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import (
     Any,
@@ -662,7 +663,6 @@ class BatchProcessor:
                         self.config.retry_max_delay_seconds,
                     )
                     # Add jitter (10-30% of delay)
-                    import random
                     jitter = delay * (0.1 + 0.2 * random.random())
                     delay += jitter
                     
@@ -732,7 +732,7 @@ class BatchProcessor:
             eta_seconds = remaining / throughput if throughput > 0 else None
             eta_time = (
                 datetime.now(timezone.utc) + 
-                __import__('datetime').timedelta(seconds=eta_seconds)
+                timedelta(seconds=eta_seconds)
             ) if eta_seconds else None
             
             progress = BatchProgress(

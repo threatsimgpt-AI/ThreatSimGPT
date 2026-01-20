@@ -48,6 +48,18 @@ from threatsimgpt.core.playbook_validator import (
     validate_playbook,
     get_validation_summary,
 )
+from threatsimgpt.core.batch_processor import (
+    BatchProcessor,
+    BatchConfig,
+    BatchProgress,
+    BatchResult,
+    BatchStatus,
+    BatchMetrics,
+    JobResult,
+    JobStatus,
+    process_scenarios_batch,
+    process_scenarios_batch_sync,
+)
 
 __all__ = [
     "SimulationResult",
@@ -83,4 +95,15 @@ __all__ = [
     "ComplianceFramework",
     "validate_playbook",
     "get_validation_summary",
+    # Batch Processing
+    "BatchProcessor",
+    "BatchConfig",
+    "BatchProgress",
+    "BatchResult",
+    "BatchStatus",
+    "BatchMetrics",
+    "JobResult",
+    "JobStatus",
+    "process_scenarios_batch",
+    "process_scenarios_batch_sync",
 ]

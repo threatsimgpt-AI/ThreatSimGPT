@@ -180,9 +180,8 @@ def initialized_engine(tmp_storage, sample_stix_data) -> MITREATTACKEngine:
         json.dump(sample_stix_data, f)
     
     # Parse the data synchronously for testing
-    asyncio.get_event_loop().run_until_complete(
-        engine._parse_matrix(ATTACKMatrix.ENTERPRISE)
-    )
+    # Use asyncio.run() for Python 3.10+ compatibility (get_event_loop deprecated)
+    asyncio.run(engine._parse_matrix(ATTACKMatrix.ENTERPRISE))
     engine._build_indexes()
     engine._initialized = True
     

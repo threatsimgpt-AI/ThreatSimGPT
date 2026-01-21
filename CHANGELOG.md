@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- Comprehensive Audit Framework documentation (Issue #117)
+  - Audit logging policy with CEF/JSON/Syslog format standards
+  - Audit events catalog with 50+ security event definitions
+  - Compliance reporting templates (executive, security ops, compliance, incident)
+  - Evidence collection procedures and chain of custody guidelines
+  - Log retention policy with tiered schedules by data classification
+  - Audit trail integrity mechanisms using HMAC-SHA256 tamper-evident logging
+- GDPR compliance documentation suite (Issue #115)
 
 ### Changed
 - Nothing yet

@@ -63,14 +63,14 @@ from threatsimgpt.core.batch_processor import (
 from threatsimgpt.core.event_sourcing import (
     Event,
     EventStore,
-    AggregateRoot,
-    InMemoryEventStore,
-    EventSourcedSimulation,
+    EventSourcedAggregate,
+    EventSourcedRepository,
+    AggregateType,
+    EventStoreError,
+    ConcurrencyError,
 )
 from threatsimgpt.core.postgres_event_store import (
-    ConnectionPool,
     PostgresEventStore,
-    EventStoreConfig,
 )
 
 __all__ = [
@@ -121,11 +121,11 @@ __all__ = [
     # Event Sourcing
     "Event",
     "EventStore",
-    "AggregateRoot",
-    "InMemoryEventStore",
-    "EventSourcedSimulation",
+    "EventSourcedAggregate",
+    "EventSourcedRepository",
+    "AggregateType",
+    "EventStoreError",
+    "ConcurrencyError",
     # PostgreSQL Event Store
-    "ConnectionPool",
     "PostgresEventStore",
-    "EventStoreConfig",
 ]

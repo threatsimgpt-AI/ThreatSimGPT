@@ -17,9 +17,9 @@ flake8>=6.1.0,<7.0.0
 mypy>=1.7.0,<2.0.0
 isort>=5.13.0,<6.0.0
 
-# Security and Quality
+# Security (runtime analysis tools only)
 bandit>=1.7.5,<2.0.0
-safety>=2.3.5,<3.0.0
+
 
 # Coverage and Documentation
 coverage>=7.3.2,<8.0.0

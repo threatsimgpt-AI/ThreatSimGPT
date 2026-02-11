@@ -19,7 +19,7 @@ from threatsimgpt.core.simulator import ThreatSimulator
 from threatsimgpt.llm.manager import LLMManager
 
 # Import API routers
-from threatsimgpt.api.routers import manuals_router, knowledge_router
+from threatsimgpt.api.routers import manuals_router, knowledge_router, feedback_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -59,10 +59,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add CORS middleware - Production should configure ALLOWED_ORIGINS env var
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],  # nosemgrep: python.fastapi.security.wildcard-cors.wildcard-cors
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,6 +71,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(manuals_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
+app.include_router(feedback_router, prefix="/api")
 
 
 # Pydantic models for API

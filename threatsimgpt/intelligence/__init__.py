@@ -30,6 +30,26 @@ from .integrations import (
     RealTimeReconnaissanceService
 )
 
+# MITRE ATT&CK Full Coverage (Issue #42)
+from .mitre_attack import (
+    MITREATTACKEngine,
+    ATTACKMatrix,
+    ATTACKDomain,
+    ATTACKTechnique,
+    ATTACKSubTechnique,
+    ATTACKMitigation,
+    ATTACKGroup,
+    ATTACKSoftware,
+    ATTACKProcedure,
+    ATTACKDetection,
+    ATTACKDataSource,
+    ATTACKCampaign,
+    ENTERPRISE_TACTICS,
+    TACTIC_DESCRIPTIONS,
+    PLATFORMS,
+    create_mitre_attack_engine,
+)
+
 __all__ = [
     # Models
     "IntelligenceProfile",
@@ -51,5 +71,23 @@ __all__ = [
     # Integrations
     "IntelligenceEngine",
     "LLMIntelligenceIntegrator",
-    "RealTimeReconnaissanceService"
+    "RealTimeReconnaissanceService",
+
+    # MITRE ATT&CK Full Coverage (Issue #42)
+    "MITREATTACKEngine",
+    "ATTACKMatrix",
+    "ATTACKDomain",
+    "ATTACKTechnique",
+    "ATTACKSubTechnique",
+    "ATTACKMitigation",
+    "ATTACKGroup",
+    "ATTACKSoftware",
+    "ATTACKProcedure",
+    "ATTACKDetection",
+    "ATTACKDataSource",
+    "ATTACKCampaign",
+    "ENTERPRISE_TACTICS",
+    "TACTIC_DESCRIPTIONS",
+    "PLATFORMS",
+    "create_mitre_attack_engine",
 ]

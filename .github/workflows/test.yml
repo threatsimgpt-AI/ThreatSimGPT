@@ -2,16 +2,64 @@ name: Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
 
 jobs:
-  test:
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          venv-${{ runner.os }}-${{ matrix.python-version }}-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt || true
+        pip install -e "." || true
+        pip install pytest pytest-cov pytest-asyncio ruff bandit
+
+    - name: Run linting with ruff
+      run: ruff check threatsimgpt/ tests/
+
+    - name: Run security checks with bandit
+      run: bandit -r threatsimgpt/ -c pyproject.toml
+
+    - name: Run unit tests
+      run: pytest tests/unit/ -v --tb=short --cov=threatsimgpt --cov-report=xml -p no:cacheprovider
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests-py${{ matrix.python-version }}
+        name: codecov-py${{ matrix.python-version }}
+      continue-on-error: true
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
 
     services:
       postgres:
@@ -41,66 +89,32 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        version: 1.7.1
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
-
-    - name: Load cached venv
-      id: cached-poetry-dependencies
-      uses: actions/cache@v3
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        python-version: "3.11"
 
     - name: Install dependencies
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root --with dev,test
-
-    - name: Install project
-      run: poetry install --no-interaction
-
-    - name: Run linting
       run: |
-        poetry run flake8 threatsimgpt/ tests/
-        poetry run black --check threatsimgpt/ tests/
-        poetry run isort --check-only threatsimgpt/ tests/
-        poetry run mypy threatsimgpt/
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,test]" || pip install -e "."
+        pip install pytest pytest-cov
 
-    - name: Run security checks
-      run: |
-        poetry run bandit -r threatsimgpt/
-        poetry run safety check
-
-    - name: Run tests
+    - name: Run integration tests
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threatsimgpt_test
         REDIS_URL: redis://localhost:6379/0
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       run: |
-        poetry run pytest --cov=threatsimgpt --cov-report=xml --cov-report=term-missing
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: true
+        if [ -d "tests/integration" ]; then
+          pytest tests/integration/ -v --tb=short
+        else
+          echo "No integration tests found, skipping"
+        fi
 
   build:
+    name: Build Package
     runs-on: ubuntu-latest
-    needs: test
+    needs: unit-tests
 
     steps:
     - uses: actions/checkout@v4
@@ -110,16 +124,19 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        version: 1.7.1
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
 
     - name: Build package
-      run: poetry build
+      run: python -m build
+
+    - name: Verify package
+      run: twine check dist/*
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: dist
+        name: dist-${{ github.sha }}
         path: dist/

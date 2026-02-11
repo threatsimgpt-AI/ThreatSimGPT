@@ -6,11 +6,16 @@ for LLM provider integration supporting OpenAI and Anthropic APIs.
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, field_serializer
+
+
+def utc_now() -> datetime:
+    """Return current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class LLMProvider(str, Enum):
@@ -116,10 +121,10 @@ class LLMRequest(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     timeout_seconds: int = Field(default=60, ge=5, le=300, description="Request timeout")
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Serialize datetime to ISO format."""
+        return value.isoformat()
 
 
 class LLMResponse(BaseModel):
@@ -178,10 +183,10 @@ class LLMResponse(BaseModel):
         rate = cost_per_1k_tokens.get(self.model, 0.01)  # Default rate
         return (self.total_tokens / 1000) * rate
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Serialize datetime to ISO format."""
+        return value.isoformat()
 
 
 class LLMProviderConfig(BaseModel):
@@ -205,9 +210,14 @@ class LLMProviderConfig(BaseModel):
     content_filter_enabled: bool = Field(default=True, description="Enable content filtering")
     audit_logging: bool = Field(default=True, description="Enable request/response logging")
 
-    class Config:
-        # Don't include API key in string representation
-        repr_exclude = {"api_key"}
+    model_config = ConfigDict(
+        str_strip_whitespace=True
+    )
+
+    def __repr__(self) -> str:
+        """Custom repr that excludes sensitive api_key."""
+        fields = {k: v for k, v in self.__dict__.items() if k != "api_key"}
+        return f"{self.__class__.__name__}({fields})"
 
 
 class PromptContext(BaseModel):

@@ -10,7 +10,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class VMState(str, Enum):
@@ -114,8 +114,7 @@ class CommandResult(BaseModel):
     vm_id: str = Field("", description="VM where command ran")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def success(self) -> bool:

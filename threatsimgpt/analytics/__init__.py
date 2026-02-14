@@ -6,6 +6,7 @@ insights, and real-time dashboards for threat simulation campaigns.
 
 import asyncio
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
@@ -181,15 +182,20 @@ class MLAnalyticsEngine:
     """Machine learning-powered analytics engine."""
 
     def __init__(self):
-        self.behavioral_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
-        self.user_segmentation_model = KMeans(n_clusters=5, random_state=42)
-        self.scaler = StandardScaler()
+        if ML_AVAILABLE:
+            self.behavioral_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+            self.user_segmentation_model = KMeans(n_clusters=5, random_state=42)
+            self.scaler = StandardScaler()
+        else:
+            self.behavioral_classifier = None
+            self.user_segmentation_model = None
+            self.scaler = None
         self.is_trained = False
 
     async def train_models(self, historical_data: List[Dict[str, Any]]) -> bool:
         """Train ML models on historical campaign data."""
 
-        if not historical_data:
+        if not ML_AVAILABLE or not historical_data:
             return False
 
         try:
@@ -253,7 +259,7 @@ class MLAnalyticsEngine:
     async def predict_user_behavior(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Predict user behavior based on current data."""
 
-        if not self.is_trained:
+        if not ML_AVAILABLE or not self.is_trained:
             return {"error": "Models not trained"}
 
         try:
@@ -526,12 +532,18 @@ class RealTimeDashboard:
 
 
 class CampaignAnalyticsEngine:
-    """Main analytics engine orchestrating all analytics components."""
+    """Main analytics engine orchestrating all analytics components.
+    
+    Issue #125 Refactor: Enhanced delegation methods to provide meaningful
+    analytics processing instead of simple pass-through delegation.
+    """
 
     def __init__(self):
         self.ml_engine = MLAnalyticsEngine()
         self.dashboard = RealTimeDashboard()
         self.campaign_data = {}
+        # Issue #125: Track user risk profiles for enrichment
+        self._user_risk_cache: Dict[str, Dict[str, Any]] = {}
 
     async def initialize(self, historical_data: Optional[List[Dict[str, Any]]] = None) -> bool:
         """Initialize the analytics engine with historical data."""
@@ -552,32 +564,186 @@ class CampaignAnalyticsEngine:
         self.campaign_data[campaign_id] = {
             "events": [],
             "config": campaign_config,
-            "start_time": datetime.utcnow()
+            "start_time": datetime.utcnow(),
+            # Issue #125: Add aggregated metrics storage
+            "aggregated_metrics": {
+                "hourly_event_counts": defaultdict(int),
+                "user_event_counts": defaultdict(int),
+                "event_type_counts": defaultdict(int),
+                "risk_score_sum": 0.0,
+                "risk_event_count": 0
+            }
         }
 
         # Add to real-time dashboard
         await self.dashboard.add_campaign(campaign_id, campaign_config)
 
-    async def process_campaign_event(self, campaign_id: str, event: Dict[str, Any]) -> None:
-        """Process a campaign event for analytics."""
-
+    async def process_campaign_event(self, campaign_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a campaign event for analytics.
+        
+        Issue #125 Refactor: Now enriches events with computed analytics
+        before storing and delegating to dashboard. Returns enriched event.
+        
+        Args:
+            campaign_id: The campaign identifier
+            event: Raw event data
+            
+        Returns:
+            Enriched event with risk scores and derived metrics
+        """
         if campaign_id not in self.campaign_data:
-            return
+            return event
 
-        # Store event
-        event['processed_timestamp'] = datetime.utcnow().isoformat()
-        self.campaign_data[campaign_id]['events'].append(event)
+        # Issue #125: Enrich event with computed analytics BEFORE storing
+        enriched_event = await self._enrich_event(campaign_id, event)
+        
+        # Store enriched event
+        enriched_event['processed_timestamp'] = datetime.utcnow().isoformat()
+        self.campaign_data[campaign_id]['events'].append(enriched_event)
+        
+        # Issue #125: Update aggregated metrics
+        await self._update_aggregated_metrics(campaign_id, enriched_event)
 
-        # Process for real-time dashboard
-        await self.dashboard.process_event(campaign_id, event)
+        # Process for real-time dashboard (now with enriched data)
+        await self.dashboard.process_event(campaign_id, enriched_event)
+        
+        return enriched_event
+
+    async def _enrich_event(self, campaign_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Enrich event with computed analytics.
+        
+        Issue #125: This method adds meaningful value by computing:
+        - Risk scores based on event type and timing
+        - User behavior context from historical data
+        - Temporal classification
+        - Behavioral flags
+        """
+        enriched = event.copy()
+        
+        # Compute risk score based on event type
+        risk_weights = {
+            'credentials_submitted': 90,
+            'attachment_downloaded': 70,
+            'form_submitted': 60,
+            'link_clicked': 50,
+            'page_visited': 30,
+            'email_opened': 20,
+            'email_delivered': 5,
+            'email_sent': 0,
+            'user_reported': -20,  # Positive behavior reduces risk
+            'training_completed': -30
+        }
+        
+        event_type = event.get('event_type', '')
+        base_risk = risk_weights.get(event_type, 10)
+        
+        # Adjust risk based on response time (faster = higher risk)
+        response_time = event.get('response_time_seconds', 300)
+        if response_time < 10:
+            base_risk = min(100, base_risk + 20)
+        elif response_time < 30:
+            base_risk = min(100, base_risk + 10)
+        
+        enriched['risk_score'] = base_risk
+        enriched['risk_level'] = self._score_to_risk_level(base_risk)
+        
+        # Add temporal context
+        timestamp = event.get('timestamp')
+        if timestamp:
+            try:
+                if isinstance(timestamp, str):
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                else:
+                    dt = timestamp
+                enriched['hour_of_day'] = dt.hour
+                enriched['day_of_week'] = dt.weekday()
+                enriched['is_business_hours'] = 9 <= dt.hour <= 17
+            except (ValueError, AttributeError):
+                pass
+        
+        # Add behavioral flags
+        flags = []
+        if response_time and response_time < 10:
+            flags.append('rapid_response')
+        if event_type == 'credentials_submitted':
+            flags.append('credential_compromise')
+        if event_type == 'attachment_downloaded':
+            flags.append('potential_malware')
+        if event_type == 'user_reported':
+            flags.append('security_aware')
+        enriched['behavioral_flags'] = flags
+        
+        # Update user risk cache
+        user_id = event.get('user_id')
+        if user_id:
+            if user_id not in self._user_risk_cache:
+                self._user_risk_cache[user_id] = {
+                    'total_events': 0,
+                    'risk_events': 0,
+                    'total_risk_score': 0
+                }
+            
+            cache = self._user_risk_cache[user_id]
+            cache['total_events'] += 1
+            cache['total_risk_score'] += base_risk
+            if base_risk >= 50:
+                cache['risk_events'] += 1
+            
+            enriched['user_risk_profile'] = {
+                'avg_risk_score': cache['total_risk_score'] / cache['total_events'],
+                'risk_event_ratio': cache['risk_events'] / cache['total_events'],
+                'is_repeat_offender': cache['risk_events'] > 2
+            }
+        
+        return enriched
+
+    def _score_to_risk_level(self, score: float) -> str:
+        """Convert numeric risk score to categorical level."""
+        if score >= 80:
+            return 'critical'
+        elif score >= 60:
+            return 'high'
+        elif score >= 30:
+            return 'medium'
+        return 'low'
+
+    async def _update_aggregated_metrics(self, campaign_id: str, event: Dict[str, Any]) -> None:
+        """Update running aggregated metrics for the campaign.
+        
+        Issue #125: Maintains aggregated statistics for efficient analytics.
+        """
+        metrics = self.campaign_data[campaign_id]['aggregated_metrics']
+        
+        # Update hourly counts
+        hour = event.get('hour_of_day', datetime.utcnow().hour)
+        metrics['hourly_event_counts'][hour] += 1
+        
+        # Update user counts
+        user_id = event.get('user_id')
+        if user_id:
+            metrics['user_event_counts'][user_id] += 1
+        
+        # Update event type counts
+        event_type = event.get('event_type', 'unknown')
+        metrics['event_type_counts'][event_type] += 1
+        
+        # Update risk aggregates
+        risk_score = event.get('risk_score', 0)
+        if risk_score > 0:
+            metrics['risk_score_sum'] += risk_score
+            metrics['risk_event_count'] += 1
 
     async def generate_campaign_analytics(self, campaign_id: str) -> CampaignAnalytics:
-        """Generate comprehensive analytics for a campaign."""
-
+        """Generate comprehensive analytics for a campaign.
+        
+        Issue #125 Refactor: Enhanced to use pre-aggregated metrics and
+        enriched event data for more efficient and meaningful analytics.
+        """
         if campaign_id not in self.campaign_data:
             return CampaignAnalytics(campaign_id=campaign_id)
 
         campaign_events = self.campaign_data[campaign_id]['events']
+        aggregated = self.campaign_data[campaign_id].get('aggregated_metrics', {})
 
         # Basic engagement metrics
         total_interactions = len(campaign_events)
@@ -617,6 +783,18 @@ class CampaignAnalyticsEngine:
             if data['total'] > 0:
                 success_rate_by_channel[channel] = data['success'] / data['total']
 
+        # Issue #125: Add risk profile distribution from enriched events
+        risk_profiles = self._calculate_risk_profiles(campaign_events)
+        
+        # Issue #125: Add user segments based on behavior
+        user_segments = self._segment_users(campaign_events)
+        
+        # Issue #125: Add peak engagement periods from aggregated data
+        peak_periods = self._find_peak_periods(aggregated.get('hourly_event_counts', {}))
+        
+        # Issue #125: Add trend analysis
+        trend_analysis = self._analyze_trends(campaign_events, aggregated)
+
         return CampaignAnalytics(
             campaign_id=campaign_id,
             total_interactions=total_interactions,
@@ -625,12 +803,182 @@ class CampaignAnalyticsEngine:
             behavioral_patterns=behavioral_patterns,
             predictive_insights=predictive_insights,
             success_rate_by_channel=success_rate_by_channel,
-            roi_calculation=roi_calculation
+            roi_calculation=roi_calculation,
+            # Issue #125: New fields from enhanced processing
+            risk_profiles=risk_profiles,
+            user_segments=user_segments,
+            peak_engagement_periods=peak_periods,
+            trend_analysis=trend_analysis
         )
 
+    def _calculate_risk_profiles(self, events: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Calculate distribution of risk levels across events.
+        
+        Issue #125: Leverages enriched event data for risk profiling.
+        """
+        risk_counts = defaultdict(int)
+        
+        for event in events:
+            risk_level = event.get('risk_level', 'unknown')
+            risk_counts[risk_level] += 1
+        
+        total = len(events) or 1
+        return {level: count / total for level, count in risk_counts.items()}
+
+    def _segment_users(self, events: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Segment users based on their behavior patterns.
+        
+        Issue #125: Uses enriched event data for user segmentation.
+        """
+        segments = {
+            'high_risk': [],
+            'medium_risk': [],
+            'low_risk': [],
+            'security_conscious': []
+        }
+        
+        user_profiles = {}
+        for event in events:
+            user_id = event.get('user_id')
+            if not user_id:
+                continue
+            
+            if user_id not in user_profiles:
+                user_profiles[user_id] = {'risk_sum': 0, 'count': 0, 'reported': False}
+            
+            user_profiles[user_id]['risk_sum'] += event.get('risk_score', 0)
+            user_profiles[user_id]['count'] += 1
+            
+            if event.get('event_type') == 'user_reported':
+                user_profiles[user_id]['reported'] = True
+        
+        for user_id, profile in user_profiles.items():
+            avg_risk = profile['risk_sum'] / profile['count'] if profile['count'] > 0 else 0
+            
+            if profile['reported']:
+                segments['security_conscious'].append(user_id)
+            elif avg_risk >= 60:
+                segments['high_risk'].append(user_id)
+            elif avg_risk >= 30:
+                segments['medium_risk'].append(user_id)
+            else:
+                segments['low_risk'].append(user_id)
+        
+        return segments
+
+    def _find_peak_periods(self, hourly_counts: Dict[int, int]) -> List[Dict[str, Any]]:
+        """Find peak engagement periods from hourly data.
+        
+        Issue #125: Uses pre-aggregated hourly counts for efficiency.
+        """
+        if not hourly_counts:
+            return []
+        
+        avg_count = sum(hourly_counts.values()) / len(hourly_counts) if hourly_counts else 0
+        
+        peaks = []
+        for hour, count in sorted(hourly_counts.items()):
+            if count > avg_count * 1.5:  # 50% above average = peak
+                peaks.append({
+                    'hour': hour,
+                    'event_count': count,
+                    'above_average_pct': ((count - avg_count) / avg_count * 100) if avg_count > 0 else 0
+                })
+        
+        return sorted(peaks, key=lambda x: x['event_count'], reverse=True)[:5]
+
+    def _analyze_trends(self, events: List[Dict[str, Any]], aggregated: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze trends in campaign data.
+        
+        Issue #125: Provides trend analysis from aggregated metrics.
+        """
+        if not events:
+            return {'direction': 'stable', 'risk_trend': 'stable'}
+        
+        # Analyze risk trend
+        risk_count = aggregated.get('risk_event_count', 0)
+        risk_sum = aggregated.get('risk_score_sum', 0)
+        avg_risk = risk_sum / risk_count if risk_count > 0 else 0
+        
+        # Simple trend: compare first half vs second half
+        mid_point = len(events) // 2
+        if mid_point > 0:
+            first_half_risk = sum(e.get('risk_score', 0) for e in events[:mid_point]) / mid_point
+            second_half_risk = sum(e.get('risk_score', 0) for e in events[mid_point:]) / (len(events) - mid_point)
+            
+            if second_half_risk > first_half_risk * 1.2:
+                risk_trend = 'increasing'
+            elif second_half_risk < first_half_risk * 0.8:
+                risk_trend = 'decreasing'
+            else:
+                risk_trend = 'stable'
+        else:
+            risk_trend = 'stable'
+        
+        return {
+            'direction': risk_trend,
+            'risk_trend': risk_trend,
+            'average_risk_score': avg_risk,
+            'total_events_analyzed': len(events)
+        }
+
     async def get_real_time_dashboard(self, campaign_id: str) -> Dict[str, Any]:
-        """Get real-time dashboard data."""
-        return await self.dashboard.get_dashboard_data(campaign_id)
+        """Get real-time dashboard data with computed analytics.
+        
+        Issue #125 Refactor: Now enriches dashboard data with computed
+        metrics instead of simple pass-through delegation.
+        
+        Returns:
+            Dashboard data enriched with analytics insights
+        """
+        # Get base dashboard data
+        dashboard_data = await self.dashboard.get_dashboard_data(campaign_id)
+        
+        if not dashboard_data or campaign_id not in self.campaign_data:
+            return dashboard_data
+        
+        # Issue #125: Enrich with computed analytics
+        campaign = self.campaign_data[campaign_id]
+        aggregated = campaign.get('aggregated_metrics', {})
+        
+        # Add risk summary
+        risk_count = aggregated.get('risk_event_count', 0)
+        risk_sum = aggregated.get('risk_score_sum', 0)
+        
+        dashboard_data['analytics_summary'] = {
+            'average_risk_score': risk_sum / risk_count if risk_count > 0 else 0,
+            'high_risk_event_count': sum(
+                1 for e in campaign.get('events', [])
+                if e.get('risk_level') in ['high', 'critical']
+            ),
+            'unique_users_at_risk': len([
+                uid for uid, profile in self._user_risk_cache.items()
+                if profile.get('risk_events', 0) > 0
+            ]),
+            'event_type_distribution': dict(aggregated.get('event_type_counts', {})),
+            'peak_activity_hour': max(
+                aggregated.get('hourly_event_counts', {}).items(),
+                key=lambda x: x[1],
+                default=(None, 0)
+            )[0]
+        }
+        
+        # Add trend indicator
+        events = campaign.get('events', [])
+        if len(events) >= 10:
+            recent_risk = sum(e.get('risk_score', 0) for e in events[-10:]) / 10
+            older_risk = sum(e.get('risk_score', 0) for e in events[-20:-10]) / 10 if len(events) >= 20 else recent_risk
+            
+            if recent_risk > older_risk * 1.2:
+                trend = 'increasing'
+            elif recent_risk < older_risk * 0.8:
+                trend = 'decreasing'
+            else:
+                trend = 'stable'
+            
+            dashboard_data['analytics_summary']['risk_trend'] = trend
+        
+        return dashboard_data
 
     async def _generate_predictive_insights(self, campaign_id: str, events: List[Dict[str, Any]]) -> List[PredictiveInsight]:
         """Generate predictive insights for the campaign."""

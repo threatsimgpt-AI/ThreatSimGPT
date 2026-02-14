@@ -60,6 +60,18 @@ from threatsimgpt.core.batch_processor import (
     process_scenarios_batch,
     process_scenarios_batch_sync,
 )
+from threatsimgpt.core.event_sourcing import (
+    Event,
+    EventStore,
+    EventSourcedAggregate,
+    EventSourcedRepository,
+    AggregateType,
+    EventStoreError,
+    ConcurrencyError,
+)
+from threatsimgpt.core.postgres_event_store import (
+    PostgresEventStore,
+)
 
 __all__ = [
     "SimulationResult",
@@ -106,4 +118,14 @@ __all__ = [
     "JobStatus",
     "process_scenarios_batch",
     "process_scenarios_batch_sync",
+    # Event Sourcing
+    "Event",
+    "EventStore",
+    "EventSourcedAggregate",
+    "EventSourcedRepository",
+    "AggregateType",
+    "EventStoreError",
+    "ConcurrencyError",
+    # PostgreSQL Event Store
+    "PostgresEventStore",
 ]

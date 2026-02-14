@@ -1,29 +1,18 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "threatsimgpt"
 version = "0.1.0"
-description = "AI-Powered Threat Simulation Platform for Cybersecurity Training"
-authors = ["ThreatSimGPT Team <threatsimgpt@hotmail.com>"]
-license = "MIT"
+description = "ThreatSimGPT – AI-powered threat simulation and intelligence platform"
 readme = "README.md"
-homepage = "https://github.com/ThreatSimGPT/ThreatSimGPT"
-repository = "https://github.com/ThreatSimGPT/ThreatSimGPT"
-documentation = "https://github.com/ThreatSimGPT/ThreatSimGPT/tree/main/docs"
-keywords = ["cybersecurity", "threat-simulation", "ai", "llm", "red-team"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Information Technology",
-    "Topic :: Security",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-packages = [{include = "threatsimgpt"}]
+requires-python = ">=3.10,<4.0"
+license = { text = "MIT" }
+authors = [{ name = "Uzo" }]
+dependencies = []
 
-[tool.poetry.scripts]
+[project.scripts]
 threatsimgpt = "threatsimgpt.cli.main:main"
 
 [tool.poetry.dependencies]
@@ -158,9 +147,8 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
 testpaths = ["tests"]
+
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

@@ -5,11 +5,13 @@ for threat simulation, scenario management, and system health checks.
 """
 
 import logging
+import os
+from uuid import uuid4
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -17,6 +19,9 @@ from pydantic import BaseModel, Field
 from threatsimgpt.core.models import ThreatScenario, SimulationResult, ThreatType
 from threatsimgpt.core.simulator import ThreatSimulator
 from threatsimgpt.llm.manager import LLMManager
+from threatsimgpt.metrics import render_metrics, update_queue_depths
+from threatsimgpt.workers.job_store import RedisJobStore
+from threatsimgpt.workers.queue import RedisQueue
 
 # Import API routers
 from threatsimgpt.api.routers import manuals_router, knowledge_router, feedback_router
@@ -103,6 +108,29 @@ class SimulationRequest(BaseModel):
     """Request model for simulation execution."""
     scenario_id: str = Field(..., description="ID of the scenario to simulate")
     max_stages: Optional[int] = Field(10, description="Maximum number of simulation stages")
+
+
+class SimulationJobResponse(BaseModel):
+    """Response model for queued simulations."""
+    job_id: str
+    status: str
+    queued: bool
+
+
+class SimulationStatusResponse(BaseModel):
+    """Response model for simulation job status."""
+    job_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[Any] = None
+
+
+class SimulationJobsResponse(BaseModel):
+    """Response model for listing simulation jobs."""
+    total: int
+    offset: int
+    limit: int
+    jobs: List[Dict[str, Any]]
 
 
 class HealthResponse(BaseModel):
@@ -219,29 +247,81 @@ async def create_scenario(request: ScenarioRequest):
 # Simulation endpoints
 @app.post("/simulations", status_code=status.HTTP_202_ACCEPTED)
 async def run_simulation(
-    request: SimulationRequest,
-    sim: ThreatSimulator = Depends(get_simulator)
+    request: SimulationRequest
 ):
     """Execute a threat simulation."""
     try:
-        # Create basic scenario (storage integration pending)
+        job_id = str(uuid4())
+
         scenario = ThreatScenario(
             name=f"Scenario_{request.scenario_id}",
             threat_type=ThreatType.CUSTOM,
-            description="API-initiated simulation scenario"
+            description="API-initiated simulation scenario",
         )
 
-        # Execute simulation
-        result = await sim.execute_simulation(scenario)
-
-        return {
-            "message": "Simulation executed successfully",
-            "result_id": result.result_id,
-            "status": result.status,
-            "stages_completed": len(result.stages),
-            "success_rate": result.success_rate,
-            "duration_seconds": result.total_duration_seconds
+        scenario_payload = {
+            "name": scenario.name,
+            "threat_type": scenario.threat_type.value if hasattr(scenario.threat_type, "value") else str(scenario.threat_type),
+            "description": scenario.description,
+            "severity": scenario.severity,
+            "target_systems": scenario.target_systems,
+            "attack_vectors": scenario.attack_vectors,
+            "metadata": scenario.metadata,
+            "scenario_id": scenario.scenario_id,
         }
+
+        queued = False
+        job_store = RedisJobStore.from_env()
+        if job_store:
+            await job_store.connect()
+            await job_store.create_job(job_id, "simulation", scenario_payload)
+            await job_store.close()
+
+        redis_queue = RedisQueue.from_env()
+        if redis_queue:
+            try:
+                await redis_queue.connect()
+                await redis_queue.enqueue(
+                    queue_name="simulation",
+                    message_type="simulation.execute",
+                    payload={
+                        "job_id": job_id,
+                        "scenario": scenario_payload,
+                        "max_stages": request.max_stages or 10,
+                    },
+                    message_id=job_id,
+                )
+                queued = True
+            except Exception as exc:
+                logger.error("Failed to enqueue simulation: %s", exc)
+                if job_store:
+                    await job_store.connect()
+                    await job_store.update_job(job_id, status="failed", error={"message": str(exc)})
+                    await job_store.close()
+            finally:
+                await redis_queue.close()
+
+        if not queued:
+            if simulator is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Threat simulator not initialized",
+                )
+            result = await simulator.execute_simulation(scenario)
+            return {
+                "job_id": job_id,
+                "status": "completed",
+                "result": {
+                    "result_id": result.result_id,
+                    "status": result.status,
+                    "stages_completed": len(result.stages),
+                    "success_rate": result.success_rate,
+                    "duration_seconds": result.total_duration_seconds,
+                },
+                "queued": False,
+            }
+
+        return SimulationJobResponse(job_id=job_id, status="queued", queued=True)
 
     except Exception as e:
         logger.error(f"Simulation failed: {str(e)}")
@@ -275,6 +355,59 @@ async def get_active_simulations(sim: ThreatSimulator = Depends(get_simulator)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get active simulations"
         )
+
+
+@app.get("/simulations/{job_id}", response_model=SimulationStatusResponse)
+async def get_simulation_status(job_id: str):
+    job_store = RedisJobStore.from_env()
+    if job_store:
+        await job_store.connect()
+        job = await job_store.get_job(job_id)
+        await job_store.close()
+        if not job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        return SimulationStatusResponse(
+            job_id=job_id,
+            status=job.get("status", "unknown"),
+            result=job.get("result"),
+            error=job.get("error"),
+        )
+
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Job store unavailable")
+
+
+@app.get("/simulations/jobs", response_model=SimulationJobsResponse)
+async def list_simulation_jobs(page: int = 1, page_size: int = 50):
+    if page < 1 or page_size < 1 or page_size > 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid pagination parameters")
+
+    job_store = RedisJobStore.from_env()
+    if not job_store:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Job store unavailable")
+
+    await job_store.connect()
+    offset = (page - 1) * page_size
+    result = await job_store.list_jobs(offset=offset, limit=page_size)
+    await job_store.close()
+
+    return SimulationJobsResponse(
+        total=int(result.get("total", 0)),
+        offset=int(result.get("offset", offset)),
+        limit=int(result.get("limit", page_size)),
+        jobs=result.get("jobs", []),
+    )
+
+
+@app.get("/metrics")
+async def metrics():
+    redis_url = os.getenv("REDIS_URL")
+    queues = os.getenv(
+        "METRICS_QUEUES",
+        "simulation,manuals,feedback,rag_ingest,rag_generate,deployment",
+    ).split(",")
+    await update_queue_depths(redis_url, [q.strip() for q in queues if q.strip()])
+    payload, content_type = render_metrics()
+    return Response(content=payload, media_type=content_type)
 
 
 # LLM endpoints

@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-postgres
+  namespace: threatsimgpt
+  labels:
+    app: threatsimgpt-postgres
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: threatsimgpt-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: threatsimgpt-postgres
+  namespace: threatsimgpt
+spec:
+  serviceName: threatsimgpt-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-postgres
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: POSTGRES_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "threatsimgpt"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

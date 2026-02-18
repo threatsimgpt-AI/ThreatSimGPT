@@ -296,11 +296,15 @@ class Neo4jStore(VectorStoreBase):
             from neo4j import AsyncGraphDatabase
 
             # Build connection URI
-            uri = f"bolt://{self.config.host}:{self.config.port}"
+            env_uri = os.environ.get("NEO4J_URI")
+            if env_uri:
+                uri = env_uri
+            else:
+                uri = f"bolt://{self.config.host}:{self.config.port}"
 
             # Get credentials from config or environment
             import os
-            username = os.environ.get("NEO4J_USERNAME", "neo4j")
+            username = os.environ.get("NEO4J_USERNAME", os.environ.get("NEO4J_USER", "neo4j"))
             password = os.environ.get("NEO4J_PASSWORD", "")
 
             if not password:

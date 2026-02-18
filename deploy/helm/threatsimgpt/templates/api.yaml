@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: 8000
+  selector:
+    app: {{ include "threatsimgpt.fullname" . }}-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "threatsimgpt.fullname" . }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ include "threatsimgpt.fullname" . }}-api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              {{- if .Values.external.postgres.enabled }}
+              value: {{ .Values.external.postgres.url | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: DATABASE_URL
+              {{- end }}
+            - name: REDIS_URL
+              {{- if .Values.external.redis.enabled }}
+              value: {{ .Values.external.redis.url | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: REDIS_URL
+              {{- end }}
+            {{- if .Values.external.postgres.enabled }}
+            - name: PGSSLMODE
+              value: {{ .Values.external.postgres.sslMode | quote }}
+            {{- end }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: OPENAI_API_KEY
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: ANTHROPIC_API_KEY
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: OPENROUTER_API_KEY
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: API_KEY
+            - name: NEO4J_URI
+              {{- if .Values.external.neo4j.enabled }}
+              value: {{ .Values.external.neo4j.uri | quote }}
+              {{- else }}
+              value: ""
+              {{- end }}
+            - name: NEO4J_USER
+              {{- if .Values.external.neo4j.enabled }}
+              value: {{ .Values.external.neo4j.user | quote }}
+              {{- else }}
+              value: ""
+              {{- end }}
+            - name: NEO4J_PASSWORD
+              {{- if .Values.external.neo4j.enabled }}
+              value: {{ .Values.external.neo4j.password | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: NEO4J_PASSWORD
+              {{- end }}
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DEBUG
+              value: "false"
+            - name: SAFETY_MODE
+              value: "true"
+            {{- if .Values.external.redis.tls.secretName }}
+            - name: REDIS_SSL_CA
+              value: "/etc/threatsimgpt/tls/redis/{{ .Values.external.redis.tls.caKey }}"
+            - name: REDIS_SSL_CERT
+              value: "/etc/threatsimgpt/tls/redis/{{ .Values.external.redis.tls.certKey }}"
+            - name: REDIS_SSL_KEY
+              value: "/etc/threatsimgpt/tls/redis/{{ .Values.external.redis.tls.keyKey }}"
+            {{- end }}
+            {{- if .Values.external.postgres.tls.secretName }}
+            - name: PGSSLROOTCERT
+              value: "/etc/threatsimgpt/tls/postgres/{{ .Values.external.postgres.tls.rootCertKey }}"
+            - name: PGSSLCERT
+              value: "/etc/threatsimgpt/tls/postgres/{{ .Values.external.postgres.tls.certKey }}"
+            - name: PGSSLKEY
+              value: "/etc/threatsimgpt/tls/postgres/{{ .Values.external.postgres.tls.keyKey }}"
+            {{- end }}
+          resources:
+{{ toYaml .Values.api.resources | indent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: data
+              mountPath: /app/data
+            - name: generated-content
+              mountPath: /app/generated_content
+            - name: reports
+              mountPath: /app/reports
+            {{- if .Values.external.redis.tls.secretName }}
+            - name: redis-tls
+              mountPath: /etc/threatsimgpt/tls/redis
+              readOnly: true
+            {{- end }}
+            {{- if .Values.external.postgres.tls.secretName }}
+            - name: postgres-tls
+              mountPath: /etc/threatsimgpt/tls/postgres
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ if .Values.config.existingConfigMap }}{{ .Values.config.existingConfigMap }}{{ else }}{{ include "threatsimgpt.fullname" . }}-config{{ end }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "threatsimgpt.fullname" . }}-data
+        - name: generated-content
+          persistentVolumeClaim:
+            claimName: {{ include "threatsimgpt.fullname" . }}-generated-content
+        - name: reports
+          persistentVolumeClaim:
+            claimName: {{ include "threatsimgpt.fullname" . }}-reports
+        {{- if .Values.external.redis.tls.secretName }}
+        - name: redis-tls
+          secret:
+            secretName: {{ .Values.external.redis.tls.secretName }}
+        {{- end }}
+        {{- if .Values.external.postgres.tls.secretName }}
+        - name: postgres-tls
+          secret:
+            secretName: {{ .Values.external.postgres.tls.secretName }}
+        {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-generated-content
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.generatedContent }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-reports
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.reports }}

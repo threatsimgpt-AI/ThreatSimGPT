@@ -7,6 +7,7 @@ attack simulations using LLMs for decision-making and VMs for execution.
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -91,6 +92,18 @@ Answer these questions in JSON format:
 }}
 """
 
+DEFAULT_AGENT_CONFIG = {
+    "min_plan_steps": 4,
+    "max_plan_steps": 10,
+    "max_prompt_hosts": 5,
+    "max_prompt_services": 5,
+    "max_prompt_credentials": 5,
+    "max_command_length": 400,
+    "max_output_chars": 3000,
+    "success_indicator_threshold": 0.5,
+    "recommendations_count": 5,
+}
+
 
 class AIAttackAgent:
     """
@@ -140,6 +153,47 @@ class AIAttackAgent:
         self.state: Optional[AgentState] = None
         self.attack_log: List[Dict[str, Any]] = []
         self._current_plan: Optional[AttackPlan] = None
+        self._target_context: Dict[str, Any] = {}
+
+    def _get_config(self, key: str) -> Any:
+        """Get config value with default fallback."""
+        return self.config.get(key, DEFAULT_AGENT_CONFIG[key])
+
+    def _build_state_context(self) -> Dict[str, Any]:
+        """Build a compact state snapshot for prompts and validation."""
+        if not self.state:
+            return {
+                "current_phase": AttackPhase.RECONNAISSANCE.value,
+                "current_objective": "",
+                "completed_objectives": [],
+                "compromised_hosts": [],
+                "discovered_services": [],
+                "collected_credentials": [],
+                "errors": [],
+            }
+
+        return {
+            "current_phase": self.state.current_phase.value,
+            "current_objective": self.state.current_objective,
+            "completed_objectives": list(self.state.completed_objectives),
+            "compromised_hosts": self.state.compromised_hosts[: self._get_config("max_prompt_hosts")],
+            "discovered_services": self.state.discovered_services[: self._get_config("max_prompt_services")],
+            "collected_credentials": self.state.collected_credentials[: self._get_config("max_prompt_credentials")],
+            "errors": self.state.errors[-3:],
+        }
+
+    def _resolve_target_identifier(self, target_info: Optional[Dict[str, Any]] = None) -> str:
+        """Resolve the most specific target identifier available."""
+        context = target_info or self._target_context
+        for key in ["ip_address", "hostname", "name", "target", "host"]:
+            value = context.get(key)
+            if value:
+                return str(value)
+
+        if self.state and self.state.compromised_hosts:
+            return self.state.compromised_hosts[0]
+
+        return "unknown-target"
 
     async def plan_attack(
         self,
@@ -157,66 +211,29 @@ class AIAttackAgent:
             AttackPlan with steps to execute
         """
         logger.info(f"Planning attack for scenario: {scenario.get('name', 'Unknown')}")
+        self._target_context = target_info
 
-        planning_prompt = f"""{ATTACK_PLANNING_PROMPT}
+        planning_prompt = self._build_planning_prompt(scenario, target_info)
 
-SCENARIO:
-{json.dumps(scenario, indent=2, default=str)}
-
-TARGET ENVIRONMENT:
-{json.dumps(target_info, indent=2, default=str)}
-
-Create a detailed attack plan with the following JSON structure:
-{{
-    "name": "Attack plan name",
-    "description": "Brief description of the attack",
-    "objectives": ["objective1", "objective2"],
-    "mitre_techniques": ["T1595", "T1566", ...],
-    "steps": [
-        {{
-            "phase": "reconnaissance|initial_access|execution|...",
-            "technique_id": "T1595.001",
-            "technique_name": "Active Scanning: IP Blocks",
-            "description": "What this step does",
-            "commands": ["nmap -sV -p- 10.0.100.10"],
-            "success_indicators": ["open ports found", "services identified"],
-            "timeout_seconds": 300
-        }}
-    ],
-    "success_criteria": ["criteria1", "criteria2"],
-    "estimated_duration_minutes": 30
-}}
-
-Include 5-10 steps covering reconnaissance through objectives.
-"""
-
-        # Generate plan using LLM
-        response = await self._generate_llm_response(planning_prompt)
-
-        # Parse response
         try:
-            plan_data = json.loads(response)
-        except json.JSONDecodeError:
-            # Try to extract JSON from response
-            plan_data = self._extract_json(response)
+            response = await self._generate_llm_response(planning_prompt, purpose="attack_planning")
+            plan_data = self._parse_plan_response(response, scenario, target_info)
+        except Exception as e:
+            logger.warning("Attack planning failed, falling back: %s", e)
+            plan_data = self._build_fallback_plan_data(scenario, target_info)
 
         # Build AttackPlan
         steps = []
         for step_data in plan_data.get("steps", []):
-            phase_str = step_data.get("phase", "reconnaissance")
-            try:
-                phase = AttackPhase(phase_str.lower())
-            except ValueError:
-                phase = AttackPhase.EXECUTION
-
+            phase = step_data["phase"]
             steps.append(AttackStep(
                 phase=phase,
-                technique_id=step_data.get("technique_id", "T0000"),
-                technique_name=step_data.get("technique_name", "Unknown"),
-                description=step_data.get("description", ""),
-                commands=step_data.get("commands", []),
-                success_indicators=step_data.get("success_indicators", []),
-                timeout_seconds=step_data.get("timeout_seconds", 300),
+                technique_id=step_data["technique_id"],
+                technique_name=step_data["technique_name"],
+                description=step_data["description"],
+                commands=step_data["commands"],
+                success_indicators=step_data["success_indicators"],
+                timeout_seconds=step_data["timeout_seconds"],
             ))
 
         plan = AttackPlan(
@@ -311,6 +328,199 @@ Include 5-10 steps covering reconnaissance through objectives.
 
         # Generate final report
         return await self._generate_report(plan, start_time)
+
+    def _build_planning_prompt(self, scenario: Dict[str, Any], target_info: Dict[str, Any]) -> str:
+        """Build the planning prompt with agent state context."""
+        state_context = self._build_state_context()
+        target_identifier = self._resolve_target_identifier(target_info)
+
+        return f"""{ATTACK_PLANNING_PROMPT}
+
+AGENT STATE:
+{json.dumps(state_context, indent=2, default=str)}
+
+SCENARIO:
+{json.dumps(scenario, indent=2, default=str)}
+
+TARGET ENVIRONMENT:
+{json.dumps(target_info, indent=2, default=str)}
+
+TARGET IDENTIFIER: {target_identifier}
+
+Create a detailed attack plan with the following JSON structure:
+{{
+    "name": "Attack plan name",
+    "description": "Brief description of the attack",
+    "objectives": ["objective1", "objective2"],
+    "mitre_techniques": ["T1595", "T1566", ...],
+    "steps": [
+        {{
+            "phase": "reconnaissance|initial_access|execution|...",
+            "technique_id": "T1595.001",
+            "technique_name": "Active Scanning: IP Blocks",
+            "description": "What this step does",
+            "commands": ["nmap -sV -p- {target_identifier}"],
+            "success_indicators": ["open ports found", "services identified"],
+            "timeout_seconds": 300
+        }}
+    ],
+    "success_criteria": ["criteria1", "criteria2"],
+    "estimated_duration_minutes": 30
+}}
+
+Include {self._get_config('min_plan_steps')}-{self._get_config('max_plan_steps')} steps covering reconnaissance through objectives.
+"""
+
+    def _parse_plan_response(
+        self,
+        response: str,
+        scenario: Dict[str, Any],
+        target_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Parse and validate LLM planning response."""
+        try:
+            plan_data = json.loads(response)
+        except json.JSONDecodeError:
+            plan_data = self._extract_json(response)
+
+        if not plan_data:
+            raise ValueError("LLM returned empty plan data")
+
+        normalized_steps = self._validate_and_normalize_steps(plan_data.get("steps", []), target_info)
+
+        plan_data["steps"] = normalized_steps
+        plan_data.setdefault("name", scenario.get("name", "Attack Plan"))
+        plan_data.setdefault("description", scenario.get("description", ""))
+        plan_data.setdefault("objectives", scenario.get("objectives", []))
+        plan_data.setdefault("success_criteria", scenario.get("success_criteria", []))
+        plan_data.setdefault("estimated_duration_minutes", scenario.get("timeout_minutes", 60))
+
+        if not plan_data.get("mitre_techniques"):
+            plan_data["mitre_techniques"] = self._extract_mitre_techniques(normalized_steps)
+
+        step_count = len(normalized_steps)
+        if step_count < self._get_config("min_plan_steps"):
+            raise ValueError("LLM returned insufficient attack steps")
+
+        return plan_data
+
+    def _build_fallback_plan_data(
+        self,
+        scenario: Dict[str, Any],
+        target_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build a deterministic fallback plan when LLM parsing fails."""
+        target_identifier = self._resolve_target_identifier(target_info)
+        objectives = scenario.get("objectives", ["Establish access", "Enumerate services"])
+
+        steps = [
+            {
+                "phase": AttackPhase.RECONNAISSANCE,
+                "technique_id": "T1595",
+                "technique_name": "Active Scanning",
+                "description": "Identify open ports and services",
+                "commands": [f"nmap -sV -p- {target_identifier}"],
+                "success_indicators": ["open", "service"],
+                "timeout_seconds": 300,
+            },
+            {
+                "phase": AttackPhase.DISCOVERY,
+                "technique_id": "T1083",
+                "technique_name": "File and Directory Discovery",
+                "description": "Enumerate common directories and system info",
+                "commands": ["uname -a", "whoami", "id"],
+                "success_indicators": ["uid", "Linux"],
+                "timeout_seconds": 120,
+            },
+            {
+                "phase": AttackPhase.CREDENTIAL_ACCESS,
+                "technique_id": "T1110",
+                "technique_name": "Brute Force",
+                "description": "Attempt credential access using known users",
+                "commands": ["hydra -L users.txt -P passwords.txt ssh://{target}".format(target=target_identifier)],
+                "success_indicators": ["login"],
+                "timeout_seconds": 300,
+            },
+            {
+                "phase": AttackPhase.COLLECTION,
+                "technique_id": "T1005",
+                "technique_name": "Data from Local System",
+                "description": "Collect system context for report",
+                "commands": ["ls -la", "cat /etc/os-release"],
+                "success_indicators": ["NAME=", "VERSION"],
+                "timeout_seconds": 120,
+            },
+        ]
+
+        return {
+            "name": scenario.get("name", "Fallback Attack Plan"),
+            "description": scenario.get("description", "Fallback plan due to LLM parsing failure."),
+            "objectives": objectives,
+            "mitre_techniques": self._extract_mitre_techniques(steps),
+            "steps": steps,
+            "success_criteria": scenario.get("success_criteria", objectives),
+            "estimated_duration_minutes": scenario.get("timeout_minutes", 60),
+        }
+
+    def _validate_and_normalize_steps(
+        self,
+        steps_data: List[Dict[str, Any]],
+        target_info: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Validate and normalize LLM-provided steps."""
+        normalized_steps = []
+        target_identifier = self._resolve_target_identifier(target_info)
+
+        for step_data in steps_data:
+            phase_str = str(step_data.get("phase", "reconnaissance")).lower()
+            try:
+                phase = AttackPhase(phase_str)
+            except ValueError:
+                phase = AttackPhase.EXECUTION
+
+            commands = step_data.get("commands") or []
+            if not isinstance(commands, list):
+                commands = [str(commands)]
+
+            commands = [self._sanitize_command(c, target_identifier) for c in commands if c]
+
+            success_indicators = step_data.get("success_indicators") or []
+            if not isinstance(success_indicators, list):
+                success_indicators = [str(success_indicators)]
+
+            normalized_steps.append({
+                "phase": phase,
+                "technique_id": str(step_data.get("technique_id", "T0000")),
+                "technique_name": str(step_data.get("technique_name", "Unknown")),
+                "description": str(step_data.get("description", "")),
+                "commands": commands,
+                "success_indicators": success_indicators,
+                "timeout_seconds": int(step_data.get("timeout_seconds", 300)),
+            })
+
+        return normalized_steps
+
+    def _sanitize_command(self, command: str, target_identifier: str) -> str:
+        """Normalize command strings and substitute known target identifiers."""
+        command = command.strip().replace("{target}", target_identifier)
+        command = command.replace("<TARGET>", target_identifier)
+        command = re.sub(r"\bTARGET\b", target_identifier, command)
+        command = re.sub(r"\bHOST\b", target_identifier, command)
+        command = re.sub(r"\bIP\b", target_identifier, command)
+
+        if len(command) > self._get_config("max_command_length"):
+            command = command[: self._get_config("max_command_length")]
+
+        return command
+
+    def _extract_mitre_techniques(self, steps: List[Dict[str, Any]]) -> List[str]:
+        """Extract MITRE technique identifiers from steps."""
+        techniques = []
+        for step in steps:
+            technique_id = step.get("technique_id")
+            if technique_id and technique_id not in techniques:
+                techniques.append(technique_id)
+        return techniques
 
     async def run_single_command(
         self,
@@ -413,24 +623,28 @@ Include 5-10 steps covering reconnaissance through objectives.
 
     async def _refine_command(self, command: str) -> str:
         """Use AI to refine command based on current state."""
-        # If command already looks complete, don't refine
-        if not any(placeholder in command for placeholder in ["TARGET", "IP", "HOST", "<"]):
+        if not self.state:
+            return command
+
+        target_identifier = self._resolve_target_identifier()
+        command = self._sanitize_command(command, target_identifier)
+
+        if not any(placeholder in command for placeholder in ["TARGET", "IP", "HOST", "<", "{target}"]):
             return command
 
         prompt = COMMAND_REFINEMENT_PROMPT.format(
-            compromised=self.state.compromised_hosts,
-            services=self.state.discovered_services[:5],  # Limit for context
+            compromised=self.state.compromised_hosts[: self._get_config("max_prompt_hosts")],
+            services=self.state.discovered_services[: self._get_config("max_prompt_services")],
             creds_count=len(self.state.collected_credentials),
             phase=self.state.current_phase.value,
             command=command,
         )
 
-        response = await self._generate_llm_response(prompt)
+        response = await self._generate_llm_response(prompt, purpose="command_refinement")
         refined = response.strip()
 
-        # Basic validation - should still look like a command
-        if refined and len(refined) < 500 and not refined.startswith("{"):
-            return refined
+        if refined and len(refined) <= self._get_config("max_command_length") and not refined.startswith("{"):
+            return self._sanitize_command(refined, target_identifier)
 
         return command
 
@@ -440,8 +654,11 @@ Include 5-10 steps covering reconnaissance through objectives.
         result: Dict[str, Any],
     ) -> bool:
         """Analyze step result and update state."""
+        if not self.state:
+            return False
+
         # Build output summary
-        outputs = "\n\n".join(result.get("outputs", []))[:3000]
+        outputs = "\n\n".join(result.get("outputs", []))[: self._get_config("max_output_chars")]
 
         prompt = RESULT_ANALYSIS_PROMPT.format(
             phase=step.phase.value,
@@ -453,33 +670,30 @@ Include 5-10 steps covering reconnaissance through objectives.
             objective=self.state.current_objective,
         )
 
-        response = await self._generate_llm_response(prompt)
+        response = await self._generate_llm_response(prompt, purpose="result_analysis")
 
-        try:
-            analysis = json.loads(response)
-        except json.JSONDecodeError:
-            analysis = self._extract_json(response)
+        analysis = self._parse_analysis_response(response)
 
         # Update state with findings
-        for host in analysis.get("new_hosts_compromised", []):
+        for host in analysis["new_hosts_compromised"]:
             if host not in self.state.compromised_hosts:
                 self.state.compromised_hosts.append(host)
 
-        for cred in analysis.get("new_credentials", []):
+        for cred in analysis["new_credentials"]:
             self.state.collected_credentials.append(cred)
 
-        for service in analysis.get("new_services", []):
+        for service in analysis["new_services"]:
             self.state.discovered_services.append(service)
 
         # Log detection indicators
-        if analysis.get("detection_indicators"):
+        if analysis["detection_indicators"]:
             self.attack_log.append({
                 "type": "detection_indicators",
                 "step": step.technique_id,
                 "indicators": analysis["detection_indicators"],
             })
 
-        return analysis.get("continue_attack", True)
+        return analysis["continue_attack"]
 
     async def _check_success_indicators(
         self,
@@ -487,6 +701,9 @@ Include 5-10 steps covering reconnaissance through objectives.
         outputs: List[str],
     ) -> bool:
         """Check if success indicators are present in outputs."""
+        if not indicators:
+            return False
+
         combined_output = "\n".join(outputs).lower()
 
         # Simple keyword matching
@@ -495,8 +712,8 @@ Include 5-10 steps covering reconnaissance through objectives.
             if indicator.lower() in combined_output:
                 matches += 1
 
-        # Consider successful if at least half of indicators match
-        return matches >= len(indicators) / 2
+        # Consider successful if a threshold of indicators match
+        return matches >= len(indicators) * self._get_config("success_indicator_threshold")
 
     async def _should_continue_after_error(
         self,
@@ -587,7 +804,7 @@ Errors: {len(result.errors)}
 Write in professional security assessment style, suitable for executive briefing.
 """
 
-        return await self._generate_llm_response(prompt)
+        return await self._generate_llm_response(prompt, purpose="executive_summary")
 
     async def _generate_recommendations(self, result: AttackResult) -> List[str]:
         """Generate security recommendations based on attack."""
@@ -601,13 +818,26 @@ Attack Results:
 Return as JSON array of strings: ["recommendation 1", "recommendation 2", ...]
 """
 
-        response = await self._generate_llm_response(prompt)
+        response = await self._generate_llm_response(prompt, purpose="recommendations")
 
         try:
-            return json.loads(response)
+            recommendations = json.loads(response)
         except json.JSONDecodeError:
-            # Parse as newline-separated
-            return [line.strip("- ").strip() for line in response.split("\n") if line.strip()]
+            recommendations = [line.strip("- ").strip() for line in response.split("\n") if line.strip()]
+
+        recommendations = [rec for rec in recommendations if isinstance(rec, str) and rec.strip()]
+        if len(recommendations) < self._get_config("recommendations_count"):
+            recommendations.extend(
+                [
+                    "Harden credential policies and enforce multi-factor authentication.",
+                    "Patch exposed services and maintain continuous vulnerability scanning.",
+                    "Implement network segmentation and restrict lateral movement paths.",
+                    "Monitor for suspicious authentication patterns and privilege escalation.",
+                    "Validate backups and test incident response runbooks regularly.",
+                ]
+            )
+
+        return recommendations[: self._get_config("recommendations_count")]
 
     def _log_action(self, step: AttackStep, result: Dict[str, Any]) -> None:
         """Log action to attack log."""
@@ -633,7 +863,7 @@ Return as JSON array of strings: ["recommendation 1", "recommendation 2", ...]
 
         self.state.last_action = datetime.utcnow()
 
-    async def _generate_llm_response(self, prompt: str) -> str:
+    async def _generate_llm_response(self, prompt: str, purpose: str = "general") -> str:
         """Generate LLM response, handling different manager interfaces."""
         try:
             # Try async generate method
@@ -651,14 +881,66 @@ Return as JSON array of strings: ["recommendation 1", "recommendation 2", ...]
             raise AttributeError("LLM manager has no generate method")
 
         except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
+            logger.error("LLM generation failed for %s: %s", purpose, e)
             return "{}"
+
+    def _parse_analysis_response(self, response: str) -> Dict[str, Any]:
+        """Parse and validate analysis response from LLM."""
+        try:
+            analysis = json.loads(response)
+        except json.JSONDecodeError:
+            analysis = self._extract_json(response)
+
+        if not isinstance(analysis, dict):
+            analysis = {}
+
+        def _list(field: str) -> List[Any]:
+            value = analysis.get(field, [])
+            return value if isinstance(value, list) else [value]
+
+        new_credentials = []
+        for cred in _list("new_credentials"):
+            if isinstance(cred, dict):
+                new_credentials.append({
+                    "username": str(cred.get("username", "")),
+                    "password_hash": str(cred.get("password_hash", "")),
+                    "type": str(cred.get("type", "unknown")),
+                })
+            elif isinstance(cred, str) and cred.strip():
+                new_credentials.append({
+                    "username": cred.strip(),
+                    "password_hash": "",
+                    "type": "unknown",
+                })
+
+        new_services = []
+        for service in _list("new_services"):
+            if isinstance(service, dict):
+                new_services.append({
+                    "host": str(service.get("host", "")),
+                    "port": int(service.get("port", 0)) if str(service.get("port", "0")).isdigit() else 0,
+                    "service": str(service.get("service", "")),
+                })
+            elif isinstance(service, str) and service.strip():
+                new_services.append({
+                    "host": service.strip(),
+                    "port": 0,
+                    "service": "unknown",
+                })
+
+        return {
+            "step_successful": bool(analysis.get("step_successful", False)),
+            "findings": [str(item) for item in _list("findings") if str(item).strip()],
+            "new_hosts_compromised": [str(item) for item in _list("new_hosts_compromised") if str(item).strip()],
+            "new_credentials": new_credentials,
+            "new_services": new_services,
+            "continue_attack": bool(analysis.get("continue_attack", True)),
+            "next_action_suggestion": str(analysis.get("next_action_suggestion", "")),
+            "detection_indicators": [str(item) for item in _list("detection_indicators") if str(item).strip()],
+        }
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Extract JSON from text that may contain other content."""
-        # Try to find JSON block
-        import re
-
         # Look for ```json ... ``` blocks
         json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
         if json_match:

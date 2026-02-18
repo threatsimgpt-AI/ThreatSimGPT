@@ -523,7 +523,8 @@ class OSINTService:
             overall_confidence=ConfidenceLevel.MEDIUM,
             data_sources_used=[],
             collection_duration_seconds=0.0,
-            completeness_score=0.0
+            completeness_score=0.0,
+            data_retention_policy="30_days_standard"
         )
 
         # Gather intelligence from various sources

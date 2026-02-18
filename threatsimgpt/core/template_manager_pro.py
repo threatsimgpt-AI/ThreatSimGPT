@@ -14,9 +14,12 @@ Includes security validation for all templates to prevent:
 
 import json
 import shutil
-from datetime import datetime
+import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+from functools import lru_cache
+from threading import Lock
 
 import yaml
 from pydantic import ValidationError
@@ -43,7 +46,93 @@ from threatsimgpt.security.template_validator import (
     SecuritySeverity,
 )
 
+# Configure audit logger
+import logging
+audit_logger = logging.getLogger('threatsimgpt.security.audit')
+
 console = Console()
+
+
+class ValidationCache:
+    """Thread-safe caching for validation results with TTL."""
+    
+    def __init__(self, ttl_seconds: int = 300):
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[str, Tuple[SecurityValidationResult, datetime]] = {}
+        self._lock = Lock()
+    
+    def get(self, key: str) -> Optional[SecurityValidationResult]:
+        """Get cached result if still valid."""
+        with self._lock:
+            if key not in self._cache:
+                return None
+            
+            result, timestamp = self._cache[key]
+            if datetime.now(timezone.utc) - timestamp > timedelta(seconds=self.ttl_seconds):
+                del self._cache[key]
+                return None
+            
+            return result
+    
+    def put(self, key: str, result: SecurityValidationResult) -> None:
+        """Cache validation result."""
+        with self._lock:
+            self._cache[key] = (result, datetime.now(timezone.utc))
+    
+    def clear(self) -> None:
+        """Clear all cached results."""
+        with self._lock:
+            self._cache.clear()
+    
+    def size(self) -> int:
+        """Get cache size."""
+        with self._lock:
+            return len(self._cache)
+
+
+class AuditLogger:
+    """Comprehensive audit logging for security validation."""
+    
+    def __init__(self, logger_name: str = 'threatsimgpt.security.audit'):
+        self.logger = logging.getLogger(logger_name)
+        self._setup_logger()
+    
+    def _setup_logger(self) -> None:
+        """Setup audit logger with proper formatting."""
+        if not self.logger.handlers:
+            handler = logging.FileHandler('logs/security_audit.log')
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
+    
+    def log_validation_attempt(self, template_file: str, user_id: Optional[str] = None) -> None:
+        """Log validation attempt."""
+        self.logger.info(
+            f"VALIDATION_ATTEMPT | template={template_file} | user={user_id or 'anonymous'} | timestamp={datetime.now(timezone.utc).isoformat()}"
+        )
+    
+    def log_validation_result(self, template_file: str, result: SecurityValidationResult, 
+                          cache_hit: bool = False, user_id: Optional[str] = None) -> None:
+        """Log validation result."""
+        status = "SECURE" if result.is_secure else "BLOCKED"
+        findings_count = len(result.findings)
+        critical_count = result.critical_count
+        
+        self.logger.info(
+            f"VALIDATION_RESULT | template={template_file} | status={status} | "
+            f"findings={findings_count} | critical={critical_count} | "
+            f"cache_hit={cache_hit} | user={user_id or 'anonymous'} | "
+            f"validation_id={result.validation_id} | timestamp={datetime.now(timezone.utc).isoformat()}"
+        )
+    
+    def log_cache_operation(self, operation: str, details: Dict[str, Any]) -> None:
+        """Log cache operations."""
+        self.logger.debug(
+            f"CACHE_{operation.upper()} | {details} | timestamp={datetime.now(timezone.utc).isoformat()}"
+        )
 
 
 class TemplateCreationWizard:
@@ -340,6 +429,8 @@ class TemplateManager:
     - Malicious URLs
     - PII exposure
     - Resource abuse patterns
+    
+    Enhanced with audit logging, caching, and proper state integration.
     """
 
     def __init__(
@@ -347,29 +438,52 @@ class TemplateManager:
         templates_dir: Optional[Path] = None,
         enable_security_validation: bool = True,
         strict_security_mode: bool = True,
+        cache_ttl_seconds: int = 300,
+        enable_audit_logging: bool = True,
     ):
-        """Initialize the template manager.
+        """Initialize template manager with enhanced security features.
         
         Args:
             templates_dir: Directory containing templates
             enable_security_validation: Enable security scanning of templates
             strict_security_mode: If True, treat medium-severity issues as blocking
+            cache_ttl_seconds: TTL for validation result caching (default: 5 minutes)
+            enable_audit_logging: Enable comprehensive audit logging
         """
         self.templates_dir = templates_dir or Path("templates")
         self.loader = YAMLConfigLoader()
         self.enable_security_validation = enable_security_validation
+        self.strict_security_mode = strict_security_mode
+        
+        # Initialize enhanced components
+        self.validation_cache = ValidationCache(ttl_seconds=cache_ttl_seconds)
+        self.audit_logger = AuditLogger() if enable_audit_logging else None
+        
+        # Security validator with proper integration
         self.security_validator = TemplateSecurityValidator(
             strict_mode=strict_security_mode
         ) if enable_security_validation else None
+        
+        # Template manager state
+        self._validation_stats = {
+            'total_validations': 0,
+            'cache_hits': 0,
+            'security_blocks': 0,
+            'last_validation': None
+        }
 
     def validate_template_security(
         self,
         template_file: Path,
+        user_id: Optional[str] = None,
+        force_refresh: bool = False,
     ) -> SecurityValidationResult:
-        """Validate a template for security issues.
+        """Validate a template for security issues with audit logging and caching.
         
         Args:
-            template_file: Path to the template file
+            template_file: Path to template file
+            user_id: Optional user identifier for audit tracking
+            force_refresh: Skip cache and force fresh validation
             
         Returns:
             SecurityValidationResult with all findings
@@ -380,11 +494,88 @@ class TemplateManager:
         if not self.security_validator:
             raise ValueError("Security validation is disabled")
         
-        return self.security_validator.validate_template_file(template_file)
-
-    def validate_all_templates_security(self) -> Dict[str, Any]:
-        """Validate all templates for security issues.
+        # Update validation statistics
+        self._validation_stats['total_validations'] += 1
+        self._validation_stats['last_validation'] = datetime.now(timezone.utc)
         
+        # Generate cache key
+        cache_key = f"{template_file}_{template_file.stat().st_mtime}_{user_id or 'anonymous'}"
+        
+        # Check cache first (unless force refresh)
+        if not force_refresh:
+            cached_result = self.validation_cache.get(cache_key)
+            if cached_result:
+                self._validation_stats['cache_hits'] += 1
+                if self.audit_logger:
+                    self.audit_logger.log_validation_result(
+                        str(template_file), cached_result, 
+                        cache_hit=True, user_id=user_id
+                    )
+                return cached_result
+        
+        # Log validation attempt
+        if self.audit_logger:
+            self.audit_logger.log_validation_attempt(str(template_file), user_id)
+        
+        # Perform validation
+        result = self.security_validator.validate_template_file(template_file)
+        
+        # Cache the result
+        self.validation_cache.put(cache_key, result)
+        
+        # Log validation result
+        if self.audit_logger:
+            self.audit_logger.log_validation_result(
+                str(template_file), result, 
+                cache_hit=False, user_id=user_id
+            )
+        
+        # Update security block statistics
+        if not result.is_secure:
+            self._validation_stats['security_blocks'] += 1
+        
+        return result
+
+    def get_validation_statistics(self) -> Dict[str, Any]:
+        """Get current validation statistics."""
+        stats = self._validation_stats.copy()
+        stats['cache_size'] = self.validation_cache.size()
+        
+        # Calculate hit rate safely
+        if stats['total_validations'] > 0:
+            stats['cache_hit_rate'] = stats['cache_hits'] / stats['total_validations']
+            stats['security_block_rate'] = stats['security_blocks'] / stats['total_validations']
+        else:
+            stats['cache_hit_rate'] = 0.0
+            stats['security_block_rate'] = 0.0
+            
+        return stats
+    
+    def clear_validation_cache(self) -> None:
+        """Clear validation cache and log operation."""
+        old_size = self.validation_cache.size()
+        self.validation_cache.clear()
+        
+        if self.audit_logger:
+            self.audit_logger.log_cache_operation(
+                'CLEAR', {'old_size': old_size, 'timestamp': datetime.now(timezone.utc).isoformat()}
+            )
+    
+    def get_cache_info(self) -> Dict[str, Any]:
+        """Get cache performance information."""
+        return {
+            'size': self.validation_cache.size(),
+            'ttl_seconds': self.validation_cache.ttl_seconds,
+            'hit_rate': self._validation_stats['cache_hit_rate'],
+            'total_validations': self._validation_stats['total_validations']
+        }
+    
+    def validate_all_templates_security(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Validate all templates for security issues with enhanced logging.
+        
+        Args:
+            user_id: Optional user identifier for audit tracking
+            
         Returns:
             Dictionary with security validation results for all templates
         """

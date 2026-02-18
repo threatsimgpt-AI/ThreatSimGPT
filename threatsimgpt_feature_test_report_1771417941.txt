@@ -1,0 +1,83 @@
+================================================================================
+THREATSIMGPT COMPREHENSIVE FEATURE TEST REPORT
+================================================================================
+Version: 0.1.0
+Test Date: 2026-02-18 12:32:21
+Total Tests: 17
+Passed: 4
+Failed: 13
+Success Rate: 23.5%
+
+## CLI Basic Commands
+--------------------------------------------------
+✗ FAIL Version Command (1.01s)
+    Error: Version command failed with exit code 1
+
+✗ FAIL Help Command (0.92s)
+    Error: Help command failed with exit code 1
+
+✗ FAIL Status Command (0.92s)
+    Error: Status command failed with exit code 1
+
+## Template Management
+--------------------------------------------------
+✗ FAIL List Templates (0.94s)
+    Error: Template list command failed with exit code 1
+
+✓ PASS Validate Templates (0.95s)
+    validation_run: True
+    validation_output: 
+
+✗ FAIL Template Health Check (0.93s)
+    Error: Template health command failed with exit code 1
+
+## Simulation Features
+--------------------------------------------------
+✗ FAIL Dry Run Simulation (0.92s)
+    Error: Dry run simulation failed with exit code 1
+
+✓ PASS Mock Provider Simulation (0.00s)
+    skipped: Dry run mode enabled
+
+## LLM Features
+--------------------------------------------------
+✗ FAIL List Providers (0.92s)
+    Error: LLM help command failed with exit code 1
+
+✓ PASS Connection Test (0.00s)
+    skipped: Dry run mode enabled
+
+## Dataset Features
+--------------------------------------------------
+✗ FAIL List Datasets (0.92s)
+    Error: Dataset list command failed with exit code 1
+
+✗ FAIL Dataset Statistics (0.95s)
+    Error: Dataset help command failed with exit code 1
+
+## Configuration
+--------------------------------------------------
+✗ FAIL Show Configuration (0.93s)
+    Error: Main help command failed with exit code 1
+
+✗ FAIL Validate Configuration (0.94s)
+    Error: Validate help command failed with exit code 1
+
+## API Features
+--------------------------------------------------
+✓ PASS API Server Start/Stop (5.02s)
+    api_health_check: request_error: HTTPConnectionPool(host='127.0.0.1', port=8999): Max retries exceeded with url: /health (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=8999): Failed to establish a new connection: [Errno 61] Connection refused"))
+    api_docs_available: False
+    api_server_started: True
+
+## Intelligence Features
+--------------------------------------------------
+✗ FAIL Intelligence Command (0.94s)
+    Error: Intel command help failed with exit code 1
+
+## Detection Features
+--------------------------------------------------
+✗ FAIL Detection Command (0.92s)
+    Error: Detection command help failed with exit code 1
+
+================================================================================

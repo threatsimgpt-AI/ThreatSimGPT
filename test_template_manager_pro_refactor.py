@@ -12,16 +12,12 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from threatsimgpt.core.template_manager_pro import (
-    TemplateManager, 
-    ValidationCache, 
-    AuditLogger
-)
+from threatsimgpt.core.template_manager_refactored import TemplateManager
 from threatsimgpt.security.template_validator import SecurityValidationResult, SecuritySeverity
 from datetime import datetime, timezone
 
 
-class TestValidationCache(unittest.TestCase):
+class TestTemplateManagerRefactored(unittest.TestCase):
     """Test the ValidationCache implementation."""
     
     def setUp(self):

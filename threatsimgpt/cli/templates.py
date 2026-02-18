@@ -13,7 +13,8 @@ from rich.tree import Tree
 from rich.syntax import Syntax
 
 from ..config.yaml_loader import YAMLConfigLoader, ConfigurationError, SchemaValidationError
-from ..core.template_manager_pro import TemplateCreationWizard, TemplateManager
+from ..core.template_manager_refactored import TemplateManager
+from ..core.template_manager_pro import TemplateCreationWizard
 
 
 console = Console()

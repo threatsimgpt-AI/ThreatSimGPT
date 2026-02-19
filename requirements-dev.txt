@@ -32,6 +32,7 @@ mkdocs-material>=9.4.8
 pre-commit>=3.6.0
 
 # Testing Utilities
+
 factory-boy>=3.3.0
 faker>=20.1.0
 respx>=0.20.2

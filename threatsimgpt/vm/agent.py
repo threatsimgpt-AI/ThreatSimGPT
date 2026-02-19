@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from .models import (
     AttackPlan,
@@ -20,6 +21,12 @@ from .models import (
 )
 from .operator import VMOperator
 from .safety import VMSafetyController
+from .analysis_engine import (
+    AnalysisEngine,
+    AnalysisEngineFactory,
+    LLMAnalysisError,
+    PatternAnalysisEngine,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +129,8 @@ class AIAttackAgent:
         llm_manager: Any,  # LLMManager from threatsimgpt.llm
         vm_operator: VMOperator,
         safety_controller: Optional[VMSafetyController] = None,
+        analysis_engine_type: str = "cached_hybrid",
+        analysis_cache_ttl_minutes: int = 30,
         config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize AI attack agent.
@@ -130,16 +139,25 @@ class AIAttackAgent:
             llm_manager: LLM manager for AI reasoning
             vm_operator: VM operator for command execution
             safety_controller: Safety controller for command validation
+            analysis_engine_type: Type of analysis engine to use
+            analysis_cache_ttl_minutes: Cache TTL for analysis engine
             config: Additional configuration
         """
         self.llm = llm_manager
         self.vm = vm_operator
         self.safety = safety_controller or VMSafetyController()
-        self.config = config or {}
-
         self.state: Optional[AgentState] = None
         self.attack_log: List[Dict[str, Any]] = []
         self._current_plan: Optional[AttackPlan] = None
+
+        # Initialize analysis engine with caching and fallback
+        self.analysis_engine = AnalysisEngineFactory.create_engine(
+            analysis_engine_type,
+            llm_manager=llm_manager,
+            cache_ttl_minutes=analysis_cache_ttl_minutes
+        )
+        
+        logger.info(f"AttackAgent initialized with {self.analysis_engine.get_engine_name()} analysis engine")
 
     async def plan_attack(
         self,
@@ -316,33 +334,95 @@ Include 5-10 steps covering reconnaissance through objectives.
         self,
         command: str,
         vm_id: Optional[str] = None,
+        analyze_output: bool = True,
+        update_attack_graph: bool = True,
     ) -> CommandResult:
         """
-        Run a single command (useful for interactive mode).
+        Run a single command with proper state tracking and intelligence analysis.
 
         Args:
             command: Command to execute
             vm_id: VM to run on (defaults to current VM in state)
+            analyze_output: Whether to analyze output for intelligence gathering
+            update_attack_graph: Whether to update attack graph with results
 
         Returns:
-            CommandResult
+            CommandResult with enhanced tracking and analysis
         """
         target_vm = vm_id or (self.state.current_vm if self.state else None)
         if not target_vm:
             raise ValueError("No VM specified and no active state")
 
+        # Initialize state if not present
+        if not self.state:
+            self.state = AgentState(
+                current_vm=target_vm,
+                current_phase=AttackPhase.EXECUTION,
+                current_objective="Single command execution",
+            )
+
+        # Track command in state
+        command_id = str(uuid4())
+        self.state.action_history.append({
+            "command_id": command_id,
+            "command": command,
+            "vm_id": target_vm,
+            "timestamp": datetime.utcnow().isoformat(),
+            "phase": self.state.current_phase.value,
+            "objective": self.state.current_objective,
+        })
+
         # Validate command safety
         is_safe, reason = self.safety.validate_command(command)
         if not is_safe:
-            return CommandResult(
+            blocked_result = CommandResult(
                 command=command,
                 stdout="",
                 stderr=f"Command blocked by safety controller: {reason}",
                 exit_code=-1,
                 vm_id=target_vm,
             )
+            
+            # Track blocked command
+            self.state.errors.append(f"Command blocked: {reason}")
+            self.state.action_history.append({
+                "command_id": command_id,
+                "result": "blocked",
+                "reason": reason,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+            
+            return blocked_result
 
-        return await self.vm.execute_command(target_vm, command)
+        # Execute command
+        result = await self.vm.execute_command(target_vm, command)
+        
+        # Add command metadata
+        result.command_id = command_id
+        result.analyzed = False
+        result.intelligence_gathered = {}
+
+        # Track in command history
+        self.state.command_history.append(result)
+        self.state.last_action = datetime.utcnow()
+
+        # Analyze output for intelligence gathering
+        if analyze_output and result.stdout:
+            intelligence = await self._analyze_command_output(command, result.stdout, result.stderr)
+            result.intelligence_gathered = intelligence
+            result.analyzed = True
+
+            # Update state with intelligence findings
+            await self._update_state_from_intelligence(intelligence)
+
+        # Update attack graph based on results
+        if update_attack_graph:
+            await self._update_attack_graph(command, result)
+
+        # Log action with enhanced tracking
+        self._log_single_command(command, result, command_id)
+
+        return result
 
     async def _execute_step(self, step: AttackStep) -> Dict[str, Any]:
         """Execute a single attack step."""
@@ -653,6 +733,235 @@ Return as JSON array of strings: ["recommendation 1", "recommendation 2", ...]
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
             return "{}"
+
+    async def _analyze_command_output(
+        self,
+        command: str,
+        stdout: str,
+        stderr: str,
+    ) -> Dict[str, Any]:
+        """
+        Analyze command output for intelligence gathering using pluggable analysis engine.
+        
+        Args:
+            command: Command that was executed
+            stdout: Standard output
+            stderr: Standard error output
+            
+        Returns:
+            Dictionary containing intelligence findings
+        """
+        try:
+            intelligence = await self.analysis_engine.analyze(command, stdout, stderr)
+            logger.debug(f"Analysis completed using {self.analysis_engine.get_engine_name()} engine")
+            return intelligence
+            
+        except LLMAnalysisError as e:
+            logger.warning(f"LLM analysis failed: {e.message}")
+            # Fall back to pattern-based analysis
+            pattern_engine = PatternAnalysisEngine()
+            return await pattern_engine.analyze(command, stdout, stderr)
+            
+        except Exception as e:
+            logger.error(f"Analysis engine failed: {e}")
+            # Ultimate fallback to pattern-based analysis
+            pattern_engine = PatternAnalysisEngine()
+            return await pattern_engine.analyze(command, stdout, stderr)
+
+    async def _update_state_from_intelligence(self, intelligence: Dict[str, Any]) -> None:
+        """
+        Update agent state with intelligence findings.
+        
+        Args:
+            intelligence: Intelligence findings from command analysis
+        """
+        # Update compromised hosts
+        for host in intelligence.get("hosts_discovered", []):
+            if host not in self.state.compromised_hosts:
+                # Note: discovered hosts are not automatically compromised
+                # They are tracked in discovered_services instead
+                pass
+
+        # Update discovered services
+        for service in intelligence.get("services_found", []):
+            if service not in self.state.discovered_services:
+                self.state.discovered_services.append(service)
+
+        # Update collected credentials
+        for cred in intelligence.get("credentials_found", []):
+            if cred not in self.state.collected_credentials:
+                self.state.collected_credentials.append(cred)
+
+        # Update discovered users
+        for user in intelligence.get("users_found", []):
+            if user not in self.state.discovered_users:
+                self.state.discovered_users.append(user)
+
+        # Log security indicators
+        indicators = intelligence.get("security_indicators", [])
+        if indicators:
+            self.attack_log.append({
+                "type": "security_indicators",
+                "timestamp": datetime.utcnow().isoformat(),
+                "indicators": indicators,
+                "source": "command_analysis",
+            })
+
+    async def _update_attack_graph(self, command: str, result: CommandResult) -> None:
+        """
+        Update attack graph based on command results.
+        
+        Args:
+            command: Command that was executed
+            result: Command execution result
+        """
+        graph_update = {
+            "command_id": getattr(result, 'command_id', 'unknown'),
+            "command": command,
+            "success": result.success,
+            "timestamp": result.timestamp.isoformat(),
+            "vm_id": result.vm_id,
+            "phase": self.state.current_phase.value,
+            "technique_inferred": self._infer_technique_from_command(command),
+            "impact_level": self._assess_command_impact(command, result),
+            "connections": [],
+        }
+
+        # Add connections based on intelligence
+        if hasattr(result, 'intelligence_gathered') and result.intelligence_gathered:
+            intelligence = result.intelligence_gathered
+            
+            # Host connections
+            for host in intelligence.get("hosts_discovered", []):
+                graph_update["connections"].append({
+                    "type": "host_discovery",
+                    "target": host,
+                    "confidence": "high" if result.success else "low",
+                })
+
+            # Service connections
+            for service in intelligence.get("services_found", []):
+                graph_update["connections"].append({
+                    "type": "service_discovery",
+                    "target": f"{service.get('host', 'unknown')}:{service.get('port', 'unknown')}",
+                    "confidence": "high",
+                })
+
+        # Add to attack log
+        self.attack_log.append({
+            "type": "attack_graph_update",
+            "timestamp": datetime.utcnow().isoformat(),
+            "update": graph_update,
+        })
+
+    def _log_single_command(self, command: str, result: CommandResult, command_id: str) -> None:
+        """
+        Log single command execution with enhanced tracking.
+        
+        Args:
+            command: Command that was executed
+            result: Command execution result
+            command_id: Unique command identifier
+        """
+        log_entry = {
+            "type": "single_command",
+            "command_id": command_id,
+            "command": command,
+            "vm_id": result.vm_id,
+            "success": result.success,
+            "exit_code": result.exit_code,
+            "execution_time_ms": result.execution_time_ms,
+            "analyzed": getattr(result, 'analyzed', False),
+            "intelligence_count": len(getattr(result, 'intelligence_gathered', {})),
+            "timestamp": result.timestamp.isoformat(),
+            "phase": self.state.current_phase.value,
+            "objective": self.state.current_objective,
+        }
+
+        # Add summary of intelligence if available
+        if hasattr(result, 'intelligence_gathered') and result.intelligence_gathered:
+            intelligence = result.intelligence_gathered
+            log_entry["intelligence_summary"] = {
+                "hosts_discovered": len(intelligence.get("hosts_discovered", [])),
+                "services_found": len(intelligence.get("services_found", [])),
+                "credentials_found": len(intelligence.get("credentials_found", [])),
+                "vulnerabilities_found": len(intelligence.get("vulnerabilities_found", [])),
+                "users_found": len(intelligence.get("users_found", [])),
+                "security_indicators": len(intelligence.get("security_indicators", [])),
+            }
+
+        self.attack_log.append(log_entry)
+
+    def _infer_technique_from_command(self, command: str) -> str:
+        """
+        Infer MITRE ATT&CK technique from command.
+        
+        Args:
+            command: Command to analyze
+            
+        Returns:
+            MITRE technique ID
+        """
+        command_lower = command.lower()
+        
+        # Basic technique mapping
+        technique_map = {
+            "nmap": "T1595",
+            "ping": "T1595",
+            "curl": "T1595",
+            "wget": "T1595",
+            "hydra": "T1110",
+            "hashcat": "T1110",
+            "john": "T1110",
+            "smbclient": "T1021",
+            "ssh": "T1021",
+            "ftp": "T1083",
+            "sqlmap": "T1190",
+            "nikto": "T1595",
+            "dirb": "T1083",
+            "gobuster": "T1083",
+            "metasploit": "T1190",
+            "msfconsole": "T1190",
+            "powershell": "T1059",
+            "cmd": "T1059",
+            "bash": "T1059",
+            "python": "T1059",
+        }
+        
+        for tool, technique in technique_map.items():
+            if tool in command_lower:
+                return technique
+                
+        return "T1059"  # Default to Command and Scripting Interpreter
+
+    def _assess_command_impact(self, command: str, result: CommandResult) -> str:
+        """
+        Assess the impact level of a command.
+        
+        Args:
+            command: Command that was executed
+            result: Command execution result
+            
+        Returns:
+            Impact level (low/medium/high/critical)
+        """
+        if not result.success:
+            return "low"
+            
+        command_lower = command.lower()
+        
+        # High impact commands
+        high_impact = ["exploit", "shell", "reverse", "meterpreter", "nc -l", "python -c"]
+        if any(term in command_lower for term in high_impact):
+            return "high"
+            
+        # Medium impact commands
+        medium_impact = ["nmap", "hydra", "hashcat", "sqlmap", "nikto"]
+        if any(term in command_lower for term in medium_impact):
+            return "medium"
+            
+        # Low impact commands
+        return "low"
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Extract JSON from text that may contain other content."""

@@ -16,14 +16,17 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import time
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from .models import Chunk, SearchResult
-from .config import VectorStoreConfig, EmbeddingConfig, EmbeddingModel
+from .config import VectorStoreConfig, EmbeddingConfig, EmbeddingModel, VectorStoreType
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,10 @@ class EmbeddingService:
         self._model = None
         self._client = None
         self._cache: Dict[str, List[float]] = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._request_count = 0
+        self._batch_count = 0
 
     async def initialize(self):
         """Initialize the embedding model."""
@@ -89,7 +96,11 @@ class EmbeddingService:
         # Check cache
         cache_key = self._cache_key(text)
         if self.config.cache_embeddings and cache_key in self._cache:
+            self._cache_hits += 1
             return self._cache[cache_key]
+
+        self._cache_misses += 1
+        self._request_count += 1
 
         embedding = await self._generate_embedding([text])
         embedding = embedding[0]
@@ -106,6 +117,8 @@ class EmbeddingService:
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts."""
+        if texts:
+            self._batch_count += 1
         # Check cache for each text
         cached_results = {}
         uncached_texts = []
@@ -194,6 +207,22 @@ class EmbeddingService:
     def clear_cache(self):
         """Clear embedding cache."""
         self._cache.clear()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get embedding service statistics."""
+        total_cache = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_cache) if total_cache else 0.0
+
+        return {
+            "model": self.config.model.value,
+            "cache_enabled": self.config.cache_embeddings,
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "cache_hit_rate": round(hit_rate, 4),
+            "embedding_requests": self._request_count,
+            "embedding_batches": self._batch_count,
+        }
 
 
 # ==========================================
@@ -993,6 +1022,13 @@ class FAISSStore(VectorStoreBase):
 # Vector Store Manager
 # ==========================================
 
+DEFAULT_STORE_BUILDERS = {
+    VectorStoreType.NEO4J: Neo4jStore,
+    VectorStoreType.CHROMADB: ChromaDBStore,
+    VectorStoreType.FAISS: FAISSStore,
+}
+
+
 class VectorStoreManager:
     """
     Manages vector store operations.
@@ -1004,13 +1040,21 @@ class VectorStoreManager:
     def __init__(
         self,
         store_config: VectorStoreConfig,
-        embedding_config: EmbeddingConfig
+        embedding_config: EmbeddingConfig,
+        store_builders: Optional[Dict[VectorStoreType, Any]] = None
     ):
         self.store_config = store_config
         self.embedding_config = embedding_config
 
+        self._store_builders = store_builders or DEFAULT_STORE_BUILDERS
+
         self._store: Optional[VectorStoreBase] = None
+        self._stores: Dict[VectorStoreType, VectorStoreBase] = {}
         self._embedding_service: Optional[EmbeddingService] = None
+        self._search_count = 0
+        self._add_count = 0
+        self._total_search_latency_ms = 0.0
+        self._avg_search_latency_ms = 0.0
 
     async def initialize(self):
         """Initialize vector store and embedding service."""
@@ -1018,23 +1062,52 @@ class VectorStoreManager:
         self._embedding_service = EmbeddingService(self.embedding_config)
         await self._embedding_service.initialize()
 
-        # Initialize vector store (Neo4j is default)
-        store_type = self.store_config.store_type.value
+        # Initialize vector stores (primary + hybrid stores)
+        store_types = [self.store_config.store_type]
+        for extra_store in self.store_config.hybrid_store_types:
+            if extra_store not in store_types:
+                store_types.append(extra_store)
 
-        if store_type == "neo4j":
-            self._store = Neo4jStore(self.store_config)
-        elif store_type == "chromadb":
-            self._store = ChromaDBStore(self.store_config)
-        elif store_type == "faiss":
-            self._store = FAISSStore(self.store_config)
-        else:
-            # Default to Neo4j
-            logger.info(f"Unknown store type '{store_type}', defaulting to Neo4j")
-            self._store = Neo4jStore(self.store_config)
+        for store_type in store_types:
+            store = self._build_store(store_type)
+            if not store:
+                continue
 
-        await self._store.initialize()
+            await store.initialize()
+            self._stores[store_type] = store
 
-        logger.info(f"Initialized VectorStoreManager with {store_type}")
+            if self._store is None:
+                self._store = store
+
+        logger.info(
+            "Initialized VectorStoreManager with stores: %s",
+            ", ".join([s.value for s in self._stores.keys()])
+        )
+
+    def _build_store(self, store_type: VectorStoreType) -> Optional[VectorStoreBase]:
+        """Create a vector store instance for the given type."""
+        builder = self._store_builders.get(store_type)
+        if not builder:
+            logger.warning("Unsupported store type '%s' - skipping", store_type.value)
+            return None
+
+        store_config = self._build_store_config(store_type)
+        return builder(store_config)
+
+    def _build_store_config(self, store_type: VectorStoreType) -> VectorStoreConfig:
+        """Clone store config with store-specific overrides."""
+        if store_type == self.store_config.store_type:
+            return self.store_config
+
+        persist_directory = os.path.join(
+            self.store_config.persist_directory,
+            store_type.value
+        )
+        return replace(
+            self.store_config,
+            store_type=store_type,
+            persist_directory=persist_directory
+        )
 
     async def add_documents(self, chunks: List[Dict[str, Any]]):
         """Add document chunks to the vector store."""
@@ -1045,8 +1118,12 @@ class VectorStoreManager:
         texts = [c["content"] for c in chunks]
         embeddings = await self._embedding_service.embed_batch(texts)
 
-        # Add to store
-        await self._store.add_chunks(chunks, embeddings)
+        # Add to all configured stores
+        await asyncio.gather(
+            *[store.add_chunks(chunks, embeddings) for store in self._stores.values()]
+        )
+
+        self._add_count += len(chunks)
 
     async def search(
         self,
@@ -1064,55 +1141,218 @@ class VectorStoreManager:
             filters: Metadata filters
             use_graph_context: If using Neo4j, enrich results with graph context
         """
+        if not self._stores:
+            return []
+
+        start_time = time.perf_counter()
+
         # Generate query embedding
         query_embedding = await self._embedding_service.embed_text(query)
 
-        # Search store
-        if use_graph_context and isinstance(self._store, Neo4jStore):
-            results = await self._store.search_with_graph_context(
+        # Search all stores
+        store_items = list(self._stores.items())
+        store_results = await asyncio.gather(
+            *[
+                self._search_store(
+                    store_type=store_type,
+                    store=store,
+                    query_embedding=query_embedding,
+                    top_k=top_k,
+                    filters=filters,
+                    use_graph_context=use_graph_context
+                )
+                for store_type, store in store_items
+            ],
+            return_exceptions=True
+        )
+
+        valid_results: List[Tuple[VectorStoreType, List[SearchResult]]] = []
+        for (store_type, _), result in zip(store_items, store_results):
+            if isinstance(result, Exception):
+                logger.warning("Store %s search failed: %s", store_type.value, result)
+                continue
+            valid_results.append(result)
+
+        aggregated = self._aggregate_results(valid_results, top_k=top_k)
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        self._search_count += 1
+        self._total_search_latency_ms += elapsed_ms
+        self._avg_search_latency_ms = self._total_search_latency_ms / self._search_count
+
+        return aggregated
+
+    async def _search_store(
+        self,
+        store_type: VectorStoreType,
+        store: VectorStoreBase,
+        query_embedding: List[float],
+        top_k: int,
+        filters: Optional[Dict[str, Any]],
+        use_graph_context: bool
+    ) -> Tuple[VectorStoreType, List[SearchResult]]:
+        """Execute a search against a specific store."""
+        if use_graph_context and isinstance(store, Neo4jStore):
+            results = await store.search_with_graph_context(
                 query_embedding,
                 top_k=top_k,
                 expand_techniques=True,
                 expand_cves=True
             )
         else:
-            results = await self._store.search(
+            results = await store.search(
                 query_embedding,
                 top_k=top_k,
                 filters=filters
             )
 
-        return results
+        return store_type, results
+
+    def _aggregate_results(
+        self,
+        store_results: List[Tuple[VectorStoreType, List[SearchResult]]],
+        top_k: int
+    ) -> List[SearchResult]:
+        """Aggregate and normalize results across stores."""
+        aggregated: Dict[str, Dict[str, Any]] = {}
+
+        for store_type, results in store_results:
+            if not results:
+                continue
+
+            scores = [r.similarity_score for r in results]
+            min_score = min(scores)
+            max_score = max(scores)
+            weight = self._store_weight(store_type)
+
+            for result in results:
+                if max_score == min_score:
+                    normalized = max_score
+                else:
+                    normalized = self._normalize_score(result.similarity_score, min_score, max_score)
+                weighted_score = normalized * weight
+                chunk_id = result.chunk.id
+
+                if chunk_id not in aggregated:
+                    metadata = result.chunk.metadata or {}
+                    metadata["store_sources"] = [store_type.value]
+                    metadata["store_scores"] = {store_type.value: round(normalized, 4)}
+                    result.chunk.metadata = metadata
+                    result.combined_score = weighted_score
+                    result.similarity_score = weighted_score
+                    aggregated[chunk_id] = {
+                        "result": result,
+                        "score_sum": weighted_score,
+                        "weight_sum": weight,
+                    }
+                    continue
+
+                entry = aggregated[chunk_id]
+                entry["score_sum"] += weighted_score
+                entry["weight_sum"] += weight
+
+                result_entry = entry["result"]
+                metadata = result_entry.chunk.metadata or {}
+                metadata.setdefault("store_sources", [])
+                metadata.setdefault("store_scores", {})
+                if store_type.value not in metadata["store_sources"]:
+                    metadata["store_sources"].append(store_type.value)
+                metadata["store_scores"][store_type.value] = round(normalized, 4)
+                result_entry.chunk.metadata = metadata
+
+        merged_results = []
+        for entry in aggregated.values():
+            result = entry["result"]
+            if entry["weight_sum"] > 0:
+                blended_score = entry["score_sum"] / entry["weight_sum"]
+                result.combined_score = blended_score
+                result.similarity_score = blended_score
+            merged_results.append(result)
+
+        merged_results.sort(key=lambda r: r.combined_score, reverse=True)
+        return merged_results[:top_k]
+
+    def _store_weight(self, store_type: VectorStoreType) -> float:
+        """Get weight for a store type."""
+        configured = self.store_config.hybrid_store_weights.get(store_type.value)
+        if configured is not None:
+            return configured
+
+        if store_type == self.store_config.store_type:
+            return 1.0
+        return 0.6
+
+    @staticmethod
+    def _normalize_score(score: float, min_score: float, max_score: float) -> float:
+        """Normalize a score to 0-1 range based on min/max."""
+        if max_score == min_score:
+            return 1.0
+        return (score - min_score) / (max_score - min_score)
 
     async def add_technique_relationship(self, chunk_id: str, technique_id: str):
         """Add MITRE technique relationship (Neo4j only)."""
-        if isinstance(self._store, Neo4jStore):
-            await self._store.add_technique_relationship(chunk_id, technique_id)
-        else:
-            logger.warning("Technique relationships only supported with Neo4j")
+        for store in self._stores.values():
+            if isinstance(store, Neo4jStore):
+                await store.add_technique_relationship(chunk_id, technique_id)
+                return
+
+        logger.warning("Technique relationships only supported with Neo4j")
 
     async def add_cve_relationship(self, chunk_id: str, cve_id: str, severity: str = ""):
         """Add CVE relationship (Neo4j only)."""
-        if isinstance(self._store, Neo4jStore):
-            await self._store.add_cve_relationship(chunk_id, cve_id, severity)
-        else:
-            logger.warning("CVE relationships only supported with Neo4j")
+        for store in self._stores.values():
+            if isinstance(store, Neo4jStore):
+                await store.add_cve_relationship(chunk_id, cve_id, severity)
+                return
+
+        logger.warning("CVE relationships only supported with Neo4j")
 
     async def get_related_chunks(self, chunk_id: str, depth: int = 2) -> List[Chunk]:
         """Get related chunks through graph traversal (Neo4j only)."""
-        if isinstance(self._store, Neo4jStore):
-            return await self._store.get_related_chunks(chunk_id, depth)
-        return []
+        related_chunks: List[Chunk] = []
+        seen_ids = set()
+
+        for store in self._stores.values():
+            if not isinstance(store, Neo4jStore):
+                continue
+
+            chunks = await store.get_related_chunks(chunk_id, depth)
+            for chunk in chunks:
+                if chunk.id in seen_ids:
+                    continue
+                seen_ids.add(chunk.id)
+                related_chunks.append(chunk)
+
+        return related_chunks
 
     async def delete_documents(self, ids: List[str]):
         """Delete documents by ID."""
-        await self._store.delete(ids)
+        if not ids:
+            return
+
+        await asyncio.gather(
+            *[store.delete(ids) for store in self._stores.values()]
+        )
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get vector store statistics."""
-        return await self._store.get_stats()
+        store_stats = {}
+        for store_type, store in self._stores.items():
+            store_stats[store_type.value] = await store.get_stats()
+
+        embedding_stats = self._embedding_service.get_stats() if self._embedding_service else {}
+
+        return {
+            "stores": store_stats,
+            "embeddings": embedding_stats,
+            "documents_added": self._add_count,
+            "searches": self._search_count,
+            "average_search_latency_ms": round(self._avg_search_latency_ms, 2),
+        }
 
     async def close(self):
         """Close vector store connections."""
-        if isinstance(self._store, Neo4jStore):
-            await self._store.close()
+        for store in self._stores.values():
+            close_method = getattr(store, "close", None)
+            if callable(close_method):
+                await close_method()

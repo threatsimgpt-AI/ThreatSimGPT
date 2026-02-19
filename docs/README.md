@@ -18,6 +18,11 @@ REST API documentation and integration guides:
 Technical reference documentation:
 - **[Configuration Reference](./reference/CONFIGURATION_REFERENCE.md)** - Complete configuration schemas and options
 
+### [Architecture](./architecture/)
+System design, ADRs, and deployment diagrams:
+- **[Architecture Overview](./architecture/README.md)** - Core components, data flow, and decisions
+- **[Deployment Diagram](./architecture/deployment-diagram.md)** - Service topology and dependencies
+
 ### [Community](./community/)
 Community guidelines and contribution information:
 - **[Contributing](./community/CONTRIBUTING.md)** - How to contribute to ThreatSimGPT
@@ -30,6 +35,7 @@ Community guidelines and contribution information:
 - **API Reference**: [API Documentation](./api/API_DOCUMENTATION.md)
 - **Development**: [Developer Guide](./guides/DEVELOPER_GUIDE.md)
 - **Configuration**: [Configuration Reference](./reference/CONFIGURATION_REFERENCE.md)
+- **Architecture**: [Architecture Overview](./architecture/README.md)
 
 ## Additional Resources
 

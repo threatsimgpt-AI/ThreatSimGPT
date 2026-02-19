@@ -30,6 +30,7 @@ import re
 import secrets
 import signal
 import threading
+import time
 import unicodedata
 from collections import deque
 from contextlib import contextmanager
@@ -45,6 +46,265 @@ from pydantic import BaseModel, Field
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# ==================== Security Models ====================
+class SecuritySeverity(Enum):
+    """Security severity levels."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class SecurityCategory(Enum):
+    """Security finding categories."""
+    INJECTION = "injection"
+    PATH_TRAVERSAL = "path_traversal"
+    MALICIOUS_CONTENT = "malicious_content"
+    CREDENTIAL_EXPOSURE = "credential_exposure"
+    PII_EXPOSURE = "pii_exposure"
+    RESOURCE_ABUSE = "resource_abuse"
+    CONTENT_POLICY = "content_policy"
+    ENCODING_ATTACK = "encoding_attack"
+    SCHEMA_VIOLATION = "schema_violation"
+
+@dataclass
+class SecurityFinding:
+    """Security finding with full context."""
+    severity: SecuritySeverity
+    category: SecurityCategory
+    title: str
+    description: str
+    location: Optional[str] = None
+    evidence: Optional[str] = None
+    pattern_matched: Optional[str] = None
+    recommendation: Optional[str] = None
+    value_preview: Optional[str] = None
+    remediation: Optional[str] = None
+    cwe_id: Optional[str] = None
+    mitre_technique: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert finding to dictionary for serialization."""
+        return {
+            "severity": self.severity.value,
+            "category": self.category.value,
+            "title": self.title,
+            "description": self.description,
+            "location": self.location,
+            "evidence": self.evidence,
+            "pattern_matched": self.pattern_matched,
+            "recommendation": self.recommendation,
+            "value_preview": self.value_preview,
+            "remediation": self.remediation,
+            "cwe_id": self.cwe_id,
+            "mitre_technique": self.mitre_technique,
+        }
+
+@dataclass
+class SecurityValidationResult:
+    """Result of template security validation."""
+    is_secure: bool
+    findings: List[SecurityFinding] = field(default_factory=list)
+    template_hash: str = field(default="")
+    validation_id: str = field(default="")
+    validated_at: Optional[datetime] = None
+    validation_duration_ms: int = field(default=0)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    scan_timestamp: Optional[datetime] = None
+    scan_duration_ms: Optional[float] = None
+    
+    # Aggregated statistics
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    info_count: int = 0
+    
+    def __post_init__(self):
+        """Initialize aggregated statistics."""
+        for finding in self.findings:
+            if finding.severity == SecuritySeverity.CRITICAL:
+                self.critical_count += 1
+            elif finding.severity == SecuritySeverity.HIGH:
+                self.high_count += 1
+            elif finding.severity == SecuritySeverity.MEDIUM:
+                self.medium_count += 1
+            elif finding.severity == SecuritySeverity.LOW:
+                self.low_count += 1
+            else:
+                self.info_count += 1
+    
+    @property
+    def blocking_findings(self) -> List[SecurityFinding]:
+        """Return findings that should block template usage."""
+        return [f for f in self.findings 
+                if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to dictionary for serialization."""
+        return {
+            "is_secure": self.is_secure,
+            "findings": [finding.to_dict() for finding in self.findings],
+            "critical_count": self.critical_count,
+            "high_count": self.high_count,
+            "medium_count": self.medium_count,
+            "low_count": self.low_count,
+            "info_count": self.info_count,
+            "scan_timestamp": self.scan_timestamp.isoformat() if self.scan_timestamp else None,
+            "scan_duration_ms": self.scan_duration_ms,
+            "template_hash": self.template_hash,
+            "validation_id": self.validation_id,
+        }
+
+# ==================== Caching System ====================
+
+class ValidationCache:
+    """Thread-safe cache for template validation results."""
+    
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[str, Tuple[SecurityValidationResult, float]] = {}
+        self._lock = threading.RLock()
+    
+    def get(self, template_hash: str) -> Optional[SecurityValidationResult]:
+        """Get cached validation result if still valid."""
+        with self._lock:
+            if template_hash in self._cache:
+                result, timestamp = self._cache[template_hash]
+                if time.time() - timestamp < self.ttl_seconds:
+                    return result
+                else:
+                    # Expired, remove from cache
+                    del self._cache[template_hash]
+        return None
+    
+    def put(self, template_hash: str, result: SecurityValidationResult) -> None:
+        """Cache validation result with timestamp."""
+        with self._lock:
+            self._cache[template_hash] = (result, time.time())
+            
+            # Implement LRU eviction
+            if len(self._cache) > self.max_size:
+                # Remove oldest entry
+                oldest_hash = min(self._cache.keys(), 
+                                   key=lambda k: self._cache[k][1])
+                del self._cache[oldest_hash]
+
+# ==================== Enhanced Audit Logging ====================
+
+class SecurityAuditLogger:
+    """Enhanced audit logger for template validation."""
+    
+    def __init__(self, log_file: Optional[Path] = None):
+        self.log_file = log_file or Path("logs/template_validation_audit.log")
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Configure audit logger with structured logging
+        self.logger = logging.getLogger(f"{__name__}.audit")
+        handler = logging.FileHandler(self.log_file)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
+    
+    def log_validation_attempt(self, 
+                           template_hash: str,
+                           template_name: str,
+                           validator_name: str,
+                           findings_count: int,
+                           duration_ms: int,
+                           success: bool
+    ) -> None:
+        """Log validation attempt with structured data."""
+        audit_data = {
+            "event_type": "template_validation",
+            "template_hash": template_hash[:16],  # First 16 chars for privacy
+            "template_name": template_name,
+            "validator": validator_name,
+            "findings_count": findings_count,
+            "duration_ms": duration_ms,
+            "success": success,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user": "system"  # Will be overridden with actual user
+        }
+        
+        log_message = (
+            f"{'PASS' if success else 'FAIL'} - "
+            f"Template: {template_name} - "
+            f"Hash: {template_hash[:16]} - "
+            f"Findings: {findings_count} - "
+            f"Duration: {duration_ms}ms"
+        )
+        
+        if success:
+            self.logger.info(log_message, extra=audit_data)
+        else:
+            self.logger.warning(log_message, extra=audit_data)
+    
+    def log_validation(
+        self,
+        template_hash: str,
+        validation_id: str,
+        result: 'SecurityValidationResult',
+        source: str = "unknown",
+        user_id: Optional[str] = None
+    ) -> None:
+        """Log a template validation event."""
+        audit_data = {
+            "event_type": "template_validation",
+            "template_hash": template_hash[:16],
+            "validation_id": validation_id,
+            "is_secure": result.is_secure,
+            "findings_count": len(result.findings),
+            "source": source,
+            "user_id": user_id or "system",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        log_message = (
+            f"{'PASS' if result.is_secure else 'FAIL'} - "
+            f"Validation: {validation_id} - "
+            f"Hash: {template_hash[:16]} - "
+            f"Findings: {len(result.findings)}"
+        )
+        
+        if result.is_secure:
+            self.logger.info(log_message, extra=audit_data)
+        else:
+            self.logger.warning(log_message, extra=audit_data)
+    
+    def log_security_finding(self, 
+                              template_hash: str,
+                              template_name: str,
+                              finding: SecurityFinding
+    ) -> None:
+        """Log security finding with structured data."""
+        audit_data = {
+            "event_type": "security_finding",
+            "template_hash": template_hash[:16],
+            "template_name": template_name,
+            "severity": finding.severity.value,
+            "category": finding.category.value,
+            "title": finding.title,
+            "location": finding.location,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        log_message = (
+            f"[{finding.severity.value.upper()}] "
+            f"{finding.category.value} - "
+            f"{finding.title} - "
+            f"Location: {finding.location}"
+        )
+        
+        if finding.severity in [SecuritySeverity.CRITICAL, SecuritySeverity.HIGH]:
+            self.logger.error(log_message, extra=audit_data)
+        else:
+            self.logger.warning(log_message, extra=audit_data)
 
 # ==================== Security Utility Functions ====================
 # Added as part of Issue #106 review fixes
@@ -674,95 +934,6 @@ class SecurityCategory(str, Enum):
     SCHEMA_VIOLATION = "schema_violation"
 
 
-@dataclass
-class SecurityFinding:
-    """Represents a security issue found during validation."""
-    
-    severity: SecuritySeverity
-    category: SecurityCategory
-    title: str
-    description: str
-    location: str  # Path in the template (e.g., "metadata.name" or "custom_parameters.url")
-    value_preview: str  # Sanitized preview of the problematic value
-    remediation: str
-    cwe_id: Optional[str] = None  # Common Weakness Enumeration ID
-    cvss_vector: Optional[str] = None
-    mitre_technique: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert finding to dictionary for serialization."""
-        return {
-            "severity": self.severity.value,
-            "category": self.category.value,
-            "title": self.title,
-            "description": self.description,
-            "location": self.location,
-            "value_preview": self.value_preview,
-            "remediation": self.remediation,
-            "cwe_id": self.cwe_id,
-            "cvss_vector": self.cvss_vector,
-            "mitre_technique": self.mitre_technique,
-        }
-
-
-@dataclass
-class SecurityValidationResult:
-    """Complete result of security validation."""
-    
-    is_secure: bool
-    findings: List[SecurityFinding]
-    scan_timestamp: datetime
-    scan_duration_ms: float
-    template_hash: str
-    validation_id: str
-    
-    # Aggregated statistics
-    critical_count: int = 0
-    high_count: int = 0
-    medium_count: int = 0
-    low_count: int = 0
-    info_count: int = 0
-    
-    def __post_init__(self):
-        """Calculate severity counts after initialization."""
-        for finding in self.findings:
-            if finding.severity == SecuritySeverity.CRITICAL:
-                self.critical_count += 1
-            elif finding.severity == SecuritySeverity.HIGH:
-                self.high_count += 1
-            elif finding.severity == SecuritySeverity.MEDIUM:
-                self.medium_count += 1
-            elif finding.severity == SecuritySeverity.LOW:
-                self.low_count += 1
-            else:
-                self.info_count += 1
-    
-    @property
-    def blocking_findings(self) -> List[SecurityFinding]:
-        """Return findings that should block template usage."""
-        return [f for f in self.findings 
-                if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary for serialization."""
-        return {
-            "is_secure": self.is_secure,
-            "validation_id": self.validation_id,
-            "scan_timestamp": self.scan_timestamp.isoformat(),
-            "scan_duration_ms": self.scan_duration_ms,
-            "template_hash": self.template_hash,
-            "summary": {
-                "total_findings": len(self.findings),
-                "critical": self.critical_count,
-                "high": self.high_count,
-                "medium": self.medium_count,
-                "low": self.low_count,
-                "info": self.info_count,
-            },
-            "findings": [f.to_dict() for f in self.findings],
-        }
-
-
 class BlocklistManager:
     """Manages blocklists for prohibited content in templates.
     
@@ -1182,227 +1353,8 @@ class BlocklistManager:
 
 
 
-class SecurityAuditLogger:
-    """Audit logger for security validation events.
-    
-    Provides immutable audit trail for:
-    - Template validation attempts
-    - Security findings
-    - Blocklist modifications
-    - Policy violations
-    
-    Security Hardening (Review Fixes):
-    - Thread-safe operations with RLock
-    - Bounded event storage with deque
-    - Log sanitization to prevent injection
-    - File locking for persistence
-    - Proper error handling with logging
-    - Increased hash length for collision resistance
-    
-    Author: Olabisi Olajide (bayulus)
-    Issue: #106 - Implement Template Security Validation
-    """
-    
-    def __init__(
-        self, 
-        log_path: Optional[Path] = None,
-        allowed_storage_bases: Optional[List[Path]] = None
-    ):
-        """Initialize audit logger.
-        
-        Args:
-            log_path: Path to persist audit logs. If None, uses in-memory only.
-            allowed_storage_bases: Allowed base directories for log path validation.
-            
-        Raises:
-            SecurityConfigError: If log_path is outside allowed directories.
-        """
-        self._lock = threading.RLock()
-        self._events: deque = deque(maxlen=MAX_AUDIT_LOG_SIZE)
-        
-        # Validate and set log path
-        if log_path:
-            self.log_path = validate_storage_path(log_path, allowed_storage_bases)
-        else:
-            self.log_path = None
-    
-    def log_validation(
-        self,
-        template_hash: str,
-        validation_id: str,
-        result: 'SecurityValidationResult',
-        source: str = "unknown",
-        user_id: Optional[str] = None
-    ) -> None:
-        """Log a template validation event.
-        
-        Args:
-            template_hash: Hash of validated template
-            validation_id: Unique validation ID
-            result: Validation result
-            source: Source of validation request
-            user_id: User who triggered validation
-        """
-        event = {
-            'event_type': 'template_validation',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'template_hash': sanitize_for_log(template_hash, 64),
-            'validation_id': sanitize_for_log(validation_id, 32),
-            'is_secure': result.is_secure,
-            'finding_counts': {
-                'critical': result.critical_count,
-                'high': result.high_count,
-                'medium': result.medium_count,
-                'low': result.low_count,
-                'info': result.info_count,
-            },
-            'scan_duration_ms': result.scan_duration_ms,
-            'source': sanitize_for_log(source, 50),
-            'user_id': sanitize_for_log(user_id, 100) if user_id else None,
-        }
-        
-        with self._lock:
-            self._events.append(event)
-        self._persist_event(event)
-    
-    def log_security_finding(
-        self,
-        finding: SecurityFinding,
-        template_hash: str,
-        validation_id: str
-    ) -> None:
-        """Log an individual security finding.
-        
-        Args:
-            finding: Security finding to log
-            template_hash: Hash of template with finding
-            validation_id: Validation ID
-        """
-        event = {
-            'event_type': 'security_finding',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'template_hash': sanitize_for_log(template_hash, 64),
-            'validation_id': sanitize_for_log(validation_id, 32),
-            'severity': finding.severity.value,
-            'category': finding.category.value,
-            'title': sanitize_for_log(finding.title, 200),
-            'location': sanitize_for_log(finding.location, 200),
-            'cwe_id': finding.cwe_id,
-        }
-        
-        with self._lock:
-            self._events.append(event)
-        self._persist_event(event)
-    
-    def log_blocklist_change(
-        self,
-        action: str,
-        category: str,
-        value: str,
-        performed_by: str,
-        reason: str
-    ) -> None:
-        """Log a blocklist modification.
-        
-        Args:
-            action: Action taken (add/remove)
-            category: Blocklist category
-            value: Value added/removed
-            performed_by: User who made the change
-            reason: Reason for change
-        """
-        event = {
-            'event_type': 'blocklist_change',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'action': sanitize_for_log(action, 20),
-            'category': sanitize_for_log(category, 50),
-            # Use full hash (32 chars) for better collision resistance
-            'value_hash': hashlib.sha256(value.encode()).hexdigest()[:32],
-            'performed_by': sanitize_for_log(performed_by, 100),
-            'reason': sanitize_for_log(reason, 200),
-        }
-        
-        with self._lock:
-            self._events.append(event)
-        self._persist_event(event)
-    
-    def get_events(
-        self,
-        event_type: Optional[str] = None,
-        limit: int = 100,
-        since: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
-        """Get audit events with optional filtering.
-        
-        Args:
-            event_type: Filter by event type
-            limit: Maximum events to return
-            since: Only events after this timestamp
-            
-        Returns:
-            List of audit events
-        """
-        with self._lock:
-            events = list(self._events)
-        
-        if event_type:
-            events = [e for e in events if e.get('event_type') == event_type]
-        
-        if since:
-            events = [e for e in events 
-                     if datetime.fromisoformat(e['timestamp']) > since]
-        
-        return events[-limit:]
-    
-    def _persist_event(self, event: Dict[str, Any], timeout: float = 5.0) -> None:
-        """Persist an event to storage with non-blocking file locking.
-        
-        Uses LOCK_NB with retry to prevent deadlocks under heavy load.
-        
-        Args:
-            event: Event data to persist
-            timeout: Maximum time to wait for lock in seconds
-        """
-        import time
-        
-        if not self.log_path:
-            return
-        
-        start_time = time.time()
-        retry_delay = 0.1
-        
-        try:
-            self.log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.log_path, 'a') as f:
-                # Try to acquire lock with timeout using non-blocking attempts
-                while True:
-                    try:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        break  # Lock acquired
-                    except BlockingIOError:
-                        elapsed = time.time() - start_time
-                        if elapsed >= timeout:
-                            # Log but don't raise - audit logging shouldn't block
-                            logger.warning(f"Failed to acquire lock for audit log after {timeout}s")
-                            return
-                        
-                        # Exponential backoff with jitter
-                        time.sleep(retry_delay + secrets.randbelow(100) / 1000)
-                        retry_delay = min(retry_delay * 1.5, 1.0)
-                
-                try:
-                    f.write(json.dumps(event) + '\n')
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        except IOError as e:
-            logger.error(f"Failed to persist audit event: {e}")
-
-        except IOError as e:
-            logger.error(f"Failed to persist audit event: {e}")
-
-
 class TemplateSecurityValidator:
-    """Comprehensive security validator for threat scenario templates.
+    """Enhanced security validator for threat scenario templates.
     
     This validator implements defense-in-depth with multiple security checks:
     1. Input sanitization and encoding validation
@@ -1413,6 +1365,12 @@ class TemplateSecurityValidator:
     6. PII exposure detection
     7. Resource abuse prevention
     8. Content policy enforcement
+    
+    REDesign Features (Issue #129):
+    - Enhanced audit logging with structured data
+    - Thread-safe caching for performance
+    - Proper integration with template manager state
+    - Follows established security validation patterns
     
     Usage:
         validator = TemplateSecurityValidator()
@@ -1667,8 +1625,11 @@ class TemplateSecurityValidator:
         enable_credential_detection: bool = True,
         blocklist_manager: Optional[BlocklistManager] = None,
         audit_logger: Optional[SecurityAuditLogger] = None,
+        enable_caching: bool = True,
+        cache_ttl_seconds: int = 300,
+        max_cache_size: int = 100,
     ):
-        """Initialize the security validator.
+        """Initialize the enhanced security validator.
         
         Args:
             strict_mode: If True, treat warnings as errors
@@ -1679,6 +1640,9 @@ class TemplateSecurityValidator:
             enable_credential_detection: Enable credential/secret detection
             blocklist_manager: Optional blocklist manager for prohibited content
             audit_logger: Optional audit logger for validation events
+            enable_caching: Enable validation result caching
+            cache_ttl_seconds: Cache time-to-live in seconds
+            max_cache_size: Maximum number of cached results
         """
         self.strict_mode = strict_mode
         self.allow_url_shorteners = allow_url_shorteners
@@ -1686,7 +1650,13 @@ class TemplateSecurityValidator:
         self.enable_pii_detection = enable_pii_detection
         self.enable_credential_detection = enable_credential_detection
         self.blocklist_manager = blocklist_manager or BlocklistManager()
-        self.audit_logger = audit_logger
+        
+        # Initialize enhanced audit logging
+        self.audit_logger = audit_logger or SecurityAuditLogger()
+        
+        # Initialize caching system
+        self.enable_caching = enable_caching
+        self.cache = ValidationCache(max_size=max_cache_size, ttl_seconds=cache_ttl_seconds) if enable_caching else None
         
         # Merge custom allowed domains
         self.allowed_domains = self.ALLOWED_URL_DOMAINS.copy()
@@ -1695,6 +1665,22 @@ class TemplateSecurityValidator:
         
         # Compile all patterns for performance
         self._compile_patterns()
+    
+    def _extract_template_name(self, template_data: Union[Dict[str, Any], str, Path]) -> str:
+        """Extract template name from template data."""
+        if isinstance(template_data, Path):
+            return template_data.name
+        elif isinstance(template_data, str):
+            # Try to extract name from YAML content
+            try:
+                parsed = yaml.safe_load(template_data)
+                return parsed.get('metadata', {}).get('name', 'unnamed')
+            except:
+                return 'unnamed'
+        elif isinstance(template_data, dict):
+            return template_data.get('metadata', {}).get('name', 'unnamed')
+        else:
+            return 'unnamed'
     
     def _compile_patterns(self) -> None:
         """Compile regex patterns for better performance."""
@@ -1728,45 +1714,42 @@ class TemplateSecurityValidator:
     def validate_template(
         self,
         template_data: Union[Dict[str, Any], str, Path],
+        user_context: Optional[Dict[str, str]] = None,
     ) -> SecurityValidationResult:
-        """Validate a template for security issues.
+        """Validate a template for security issues with enhanced features.
         
-        Integrates with circuit breaker and metrics for production resilience.
+        Integrates with caching, audit logging, and proper state management.
         
         Args:
             template_data: Template as dict, YAML string, or file path
+            user_context: Optional user context for audit logging (user, role, etc.)
             
         Returns:
-            SecurityValidationResult with all findings
+            SecurityValidationResult with all findings and metadata
         """
         import time
         
-        # Get circuit breaker for template validation
-        cb = get_circuit_breaker("template_validation", failure_threshold=10, recovery_timeout=60)
+        # Extract user context for audit logging
+        user = user_context.get('user', 'system') if user_context else 'system'
+        role = user_context.get('role', 'unknown') if user_context else 'unknown'
         
-        # Check circuit breaker
-        if not cb.allow_request():
-            logger.warning("Template validation blocked by circuit breaker")
-            get_validation_metrics().record_validation(
-                success=False, duration_ms=0, blocked=True
-            )
-            # Return a blocked result
-            return SecurityValidationResult(
-                is_secure=False,
-                findings=[SecurityFinding(
-                    severity=SecuritySeverity.CRITICAL,
-                    category=SecurityCategory.RESOURCE_ABUSE,
-                    title="Validation Temporarily Unavailable",
-                    description="Template validation is temporarily unavailable due to high error rate. Please try again later.",
-                    location="system",
-                    evidence="Circuit breaker is open",
-                )],
-                blocking_findings=[],
-                template_hash="CB_OPEN",
-                validation_id="blocked",
-                validated_at=datetime.now(timezone.utc),
-                validation_duration_ms=0,
-            )
+        # Check cache first if enabled
+        template_hash = self._calculate_hash(template_data)
+        template_name = self._extract_template_name(template_data)
+        
+        if self.enable_caching and self.cache:
+            cached_result = self.cache.get(template_hash)
+            if cached_result:
+                # Log cache hit
+                self.audit_logger.log_validation_attempt(
+                    template_hash=template_hash,
+                    template_name=template_name,
+                    validator_name="TemplateSecurityValidator",
+                    findings_count=len(cached_result.findings),
+                    duration_ms=0,  # Cache hit = 0ms
+                    success=cached_result.is_secure
+                )
+                return cached_result
         
         start_time_perf = time.perf_counter()
         start_time = datetime.now(timezone.utc)
@@ -1784,10 +1767,13 @@ class TemplateSecurityValidator:
                         template_hash="PARSE_FAILED",
                         start_time=start_time,
                     )
-                    cb.record_success()  # Parse failures are expected, not circuit-breaker-worthy
-                    duration_ms = (time.perf_counter() - start_time_perf) * 1000
-                    get_validation_metrics().record_validation(
-                        success=False, duration_ms=duration_ms, findings=findings
+                    self.audit_logger.log_validation_attempt(
+                        template_hash=template_hash,
+                        template_name=template_name,
+                        validator_name="TemplateSecurityValidator",
+                        findings_count=len(findings),
+                        duration_ms=0,
+                        success=False,
                     )
                     return result
             
@@ -1814,49 +1800,41 @@ class TemplateSecurityValidator:
             # Check against blocklists
             findings.extend(self._check_blocklist(template_data))
             
+            # Create result
             result = self._create_result(
                 findings=findings,
                 template_hash=template_hash,
                 start_time=start_time,
             )
             
-            # Record success
-            cb.record_success()
+            # Cache result if enabled
+            if self.enable_caching and self.cache:
+                self.cache.put(template_hash, result)
+            
+            # Log validation attempt
             duration_ms = (time.perf_counter() - start_time_perf) * 1000
-            get_validation_metrics().record_validation(
-                success=result.is_secure, duration_ms=duration_ms, findings=findings
+            self.audit_logger.log_validation_attempt(
+                template_hash=template_hash,
+                template_name=template_name,
+                validator_name="TemplateSecurityValidator",
+                findings_count=len(findings),
+                duration_ms=duration_ms,
+                success=result.is_secure,
             )
+            
+            # Log individual findings if any
+            for finding in findings:
+                if finding.severity in [SecuritySeverity.CRITICAL, SecuritySeverity.HIGH]:
+                    self.audit_logger.log_security_finding(
+                        template_hash=template_hash,
+                        template_name=template_name,
+                        finding=finding,
+                    )
             
             return result
             
-        except RegexTimeoutError as e:
-            # Timeout is a recoverable failure
-            logger.warning(f"Validation timeout: {e}")
-            cb.record_failure(e)
-            get_validation_metrics().record_timeout()
-            duration_ms = (time.perf_counter() - start_time_perf) * 1000
-            get_validation_metrics().record_validation(
-                success=False, duration_ms=duration_ms, findings=findings
-            )
-            findings.append(SecurityFinding(
-                severity=SecuritySeverity.MEDIUM,
-                category=SecurityCategory.RESOURCE_ABUSE,
-                title="Validation Timeout",
-                description=f"Template validation timed out: {e}",
-                location="system",
-                evidence=str(e),
-            ))
-            return self._create_result(
-                findings=findings,
-                template_hash="TIMEOUT",
-                start_time=start_time,
-            )
-            
         except Exception as e:
-            # Unexpected error - record for circuit breaker
-            logger.error(f"Validation error: {e}", exc_info=True)
-            cb.record_failure(e)
-            get_validation_metrics().record_error()
+            # Log unexpected errors
             duration_ms = (time.perf_counter() - start_time_perf) * 1000
             get_validation_metrics().record_validation(
                 success=False, duration_ms=duration_ms, findings=findings
@@ -1867,7 +1845,6 @@ class TemplateSecurityValidator:
                 title="Validation Error",
                 description=f"Unexpected error during validation: {type(e).__name__}",
                 location="system",
-                evidence=str(e)[:100],
             ))
             return self._create_result(
                 findings=findings,
@@ -2036,8 +2013,8 @@ class TemplateSecurityValidator:
         result = SecurityValidationResult(
             is_secure=is_secure,
             findings=findings,
-            scan_timestamp=start_time,
-            scan_duration_ms=duration_ms,
+            validated_at=start_time,
+            validation_duration_ms=int(duration_ms),
             template_hash=template_hash,
             validation_id=validation_id,
         )
@@ -2056,9 +2033,9 @@ class TemplateSecurityValidator:
             for finding in findings:
                 if finding.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH):
                     self.audit_logger.log_security_finding(
-                        finding=finding,
                         template_hash=template_hash,
-                        validation_id=validation_id
+                        template_name="unknown",
+                        finding=finding
                     )
         
         return result

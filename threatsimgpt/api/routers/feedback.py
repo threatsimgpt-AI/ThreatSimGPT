@@ -7,6 +7,7 @@ Issue: #3 - Create REST API for Feedback Loop
 """
 
 import logging
+import os
 import secrets
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -446,8 +447,28 @@ async def submit_feedback(
         
         _feedback_store[feedback_id] = feedback_entry
         
-        # Queue background processing
-        background_tasks.add_task(_process_feedback_async, feedback_id)
+        queued = False
+        redis_url = os.getenv("REDIS_URL")
+
+        if redis_url:
+            try:
+                from threatsimgpt.workers.queue import RedisQueue
+
+                queue = RedisQueue(redis_url)
+                await queue.connect()
+                await queue.enqueue(
+                    queue_name="feedback",
+                    message_type="feedback.process",
+                    payload={"feedback_id": feedback_id},
+                    message_id=feedback_id,
+                )
+                await queue.close()
+                queued = True
+            except Exception as exc:
+                logger.error("Failed to enqueue feedback processing: %s", exc)
+
+        if not queued:
+            background_tasks.add_task(_process_feedback_async, feedback_id)
         
         logger.info(f"Feedback submitted: {feedback_id} for {request.target_type}/{request.target_id}")
         

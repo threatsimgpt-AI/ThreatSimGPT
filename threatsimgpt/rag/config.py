@@ -146,6 +146,10 @@ class VectorStoreConfig:
     """Configuration for vector store."""
     store_type: VectorStoreType = VectorStoreType.NEO4J  # Neo4j is default
 
+    # Hybrid store settings
+    hybrid_store_types: List[VectorStoreType] = field(default_factory=list)
+    hybrid_store_weights: Dict[str, float] = field(default_factory=dict)
+
     # Connection
     host: str = "localhost"
     port: int = 7687  # Neo4j bolt protocol port
@@ -334,7 +338,14 @@ class RAGConfig:
         if "embedding" in data:
             config.embedding = EmbeddingConfig(**data["embedding"])
         if "vectorstore" in data:
-            config.vectorstore = VectorStoreConfig(**data["vectorstore"])
+            vectorstore_data = data["vectorstore"].copy()
+            if "store_type" in vectorstore_data:
+                vectorstore_data["store_type"] = VectorStoreType(vectorstore_data["store_type"])
+            if "hybrid_store_types" in vectorstore_data:
+                vectorstore_data["hybrid_store_types"] = [
+                    VectorStoreType(value) for value in vectorstore_data["hybrid_store_types"]
+                ]
+            config.vectorstore = VectorStoreConfig(**vectorstore_data)
         if "retrieval" in data:
             config.retrieval = RetrievalConfig(**data["retrieval"])
         if "generation" in data:
@@ -366,6 +377,8 @@ class RAGConfig:
                 "store_type": self.vectorstore.store_type.value,
                 "collection_name": self.vectorstore.collection_name,
                 "persist_directory": self.vectorstore.persist_directory,
+                "hybrid_store_types": [t.value for t in self.vectorstore.hybrid_store_types],
+                "hybrid_store_weights": self.vectorstore.hybrid_store_weights,
             },
             "retrieval": {
                 "top_k": self.retrieval.top_k,

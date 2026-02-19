@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-api
+  namespace: threatsimgpt
+  labels:
+    app: threatsimgpt-api
+spec:
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  selector:
+    app: threatsimgpt-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-api
+  namespace: threatsimgpt
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: threatsimgpt-api
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-api
+    spec:
+      containers:
+        - name: api
+          image: threatsimgpt:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: OPENAI_API_KEY
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: OPENROUTER_API_KEY
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: API_KEY
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DEBUG
+              value: "false"
+            - name: SAFETY_MODE
+              value: "true"
+            - name: OLLAMA_BASE_URL
+              value: "http://threatsimgpt-ollama:11434"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: data
+              mountPath: /app/data
+            - name: generated-content
+              mountPath: /app/generated_content
+            - name: reports
+              mountPath: /app/reports
+            - name: logs
+              mountPath: /app/logs
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: threatsimgpt-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: threatsimgpt-data
+        - name: generated-content
+          persistentVolumeClaim:
+            claimName: threatsimgpt-generated-content
+        - name: reports
+          persistentVolumeClaim:
+            claimName: threatsimgpt-reports
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: threatsimgpt-data
+  namespace: threatsimgpt
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: threatsimgpt-generated-content
+  namespace: threatsimgpt
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: threatsimgpt-reports
+  namespace: threatsimgpt
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi

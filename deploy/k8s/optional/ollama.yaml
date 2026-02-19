@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-ollama
+  namespace: threatsimgpt
+  labels:
+    app: threatsimgpt-ollama
+spec:
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+  selector:
+    app: threatsimgpt-ollama
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-ollama
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-ollama
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          env:
+            - name: OLLAMA_HOST
+              value: 0.0.0.0
+            - name: OLLAMA_ORIGINS
+              value: "*"
+          volumeMounts:
+            - name: ollama-models
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              memory: 4Gi
+            limits:
+              memory: 8Gi
+      volumes:
+        - name: ollama-models
+          persistentVolumeClaim:
+            claimName: threatsimgpt-ollama-models
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: threatsimgpt-ollama-models
+  namespace: threatsimgpt
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 50Gi

@@ -1,0 +1,52 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-redis
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: {{ include "threatsimgpt.fullname" . }}-redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-redis
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "threatsimgpt.fullname" . }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "threatsimgpt.fullname" . }}-redis
+  template:
+    metadata:
+      labels:
+        app: {{ include "threatsimgpt.fullname" . }}-redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          args: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage }}
+{{- end }}

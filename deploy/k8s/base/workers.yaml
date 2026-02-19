@@ -1,0 +1,385 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-manuals
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-manuals
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-manuals
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "manuals"
+            - name: WORKER_CONCURRENCY
+              value: "2"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9102"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: data
+              mountPath: /app/data
+            - name: generated-content
+              mountPath: /app/generated_content
+      volumes:
+        - name: config
+          configMap:
+            name: threatsimgpt-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: threatsimgpt-data
+        - name: generated-content
+          persistentVolumeClaim:
+            claimName: threatsimgpt-generated-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-manuals
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-manuals
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-feedback
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-feedback
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-feedback
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "feedback"
+            - name: WORKER_CONCURRENCY
+              value: "2"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9102"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-feedback
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-feedback
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-rag-ingest
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-rag-ingest
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-rag-ingest
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "rag_ingest"
+            - name: WORKER_CONCURRENCY
+              value: "1"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: OPENAI_API_KEY
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: NEO4J_PASSWORD
+            - name: METRICS_PORT
+              value: "9102"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: threatsimgpt-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-rag-ingest
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-rag-ingest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-rag-generate
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-rag-generate
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-rag-generate
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "rag_generate"
+            - name: WORKER_CONCURRENCY
+              value: "2"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: OPENAI_API_KEY
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: NEO4J_PASSWORD
+            - name: METRICS_PORT
+              value: "9102"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-rag-generate
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-rag-generate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-deployment
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-deployment
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-deployment
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "deployment"
+            - name: WORKER_CONCURRENCY
+              value: "2"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9102"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threatsimgpt-worker-simulation
+  namespace: threatsimgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-worker-simulation
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-worker-simulation
+    spec:
+      containers:
+        - name: worker
+          image: threatsimgpt:latest
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: REDIS_URL
+            - name: WORKER_QUEUES
+              value: "simulation"
+            - name: WORKER_CONCURRENCY
+              value: "2"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9102"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: threatsimgpt-secrets
+                  key: OPENAI_API_KEY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-deployment
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-deployment
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-worker-simulation
+  namespace: threatsimgpt
+spec:
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: 9102
+  selector:
+    app: threatsimgpt-worker-simulation
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

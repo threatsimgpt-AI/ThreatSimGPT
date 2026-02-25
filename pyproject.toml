@@ -8,8 +8,74 @@ version = "0.1.0"
 description = "ThreatSimGPT – AI-powered threat simulation and intelligence platform"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
-license = { text = "MIT" }
-authors = [{ name = "Uzo" }]
+license = { text = """
+ThreatSimGPT Dual License
+
+This software is dual-licensed under the terms outlined below. You may choose to use this software under either license.
+
+===========================================================================
+
+PERSONAL USE LICENSE (FREE)
+
+For personal, non-commercial use, ThreatSimGPT is licensed under the MIT License:
+
+MIT License
+
+Copyright (c) 2026 ThreatSimGPT Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===========================================================================
+
+COMMERCIAL/ENTERPRISE LICENSE (REQUIRED)
+
+For any commercial, enterprise, or professional use, including but not limited to:
+
+- Use in commercial products or services
+- Use by companies or organizations for business purposes
+- Use in revenue-generating activities
+- Use in consulting or professional services
+- Distribution as part of commercial software
+
+A commercial license must be obtained from ThreatSimGPT Team.
+
+To obtain a commercial license, please contact:
+Email: threatsimgpt@hotmail.com
+GitHub: https://github.com/threatsimgpt-AI/ThreatSimGPT
+
+Commercial licenses include:
+- Priority support and maintenance
+- Additional enterprise features
+- Custom integration support
+- Service level agreements (SLAs)
+- Indemnification
+
+===========================================================================
+
+USAGE DETERMINATION
+
+If you are unsure whether your use case requires a commercial license, please contact us.
+When in doubt, a commercial license is required.
+
+Violations of this dual licensing model may result in legal action.
+""" }
+authors = [{ name = "ThreatSimGPT Team" }]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.24.0",

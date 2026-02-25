@@ -12,6 +12,11 @@ license = { text = "MIT" }
 authors = [{ name = "Uzo" }]
 dependencies = []
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["threatsimgpt*"]
+exclude = ["tests*", "docs*", "dev*"]
+
 [project.scripts]
 threatsimgpt = "threatsimgpt.cli.main:main"
 

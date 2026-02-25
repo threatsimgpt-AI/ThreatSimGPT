@@ -36,7 +36,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-dev.txt || true
-        pip install -e "." || true
+        pip install -e .
         pip install pytest pytest-cov pytest-asyncio ruff bandit
 
     - name: Run linting with ruff

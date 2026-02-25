@@ -45,11 +45,11 @@ def deploy_group(ctx):
         ctx.obj['config'] = config
 
         # Initialize deployment engine
-        deployment_config = config.get('deployment', {})
+        deployment_config = config.deployment or {}
         ctx.obj['deployment_engine'] = ThreatDeploymentEngine(deployment_config)
 
         # Initialize platform integrations
-        platform_config = config.get('integrations', {})
+        platform_config = config.integrations or {}
         ctx.obj['platform_manager'] = PlatformIntegrationManager(platform_config)
 
     except Exception as e:
@@ -69,7 +69,7 @@ def deploy_group(ctx):
 @click.option('--platforms', '-p', multiple=True,
               help='Specific platforms to deploy through (e.g., microsoft365, proofpoint)')
 @click.option('--duration', '-d', default=24, type=int, help='Campaign duration in hours')
-@click.option('--test-mode', is_flag=True, default=True, help='Run in test mode (safe deployment)')
+@click.option('--test-mode', is_flag=True, help='Run in test mode (safe deployment)')
 @click.option('--compliance-approved', is_flag=True, default=False,
               help='Mark as compliance approved (required for production)')
 @click.option('--monitor', '-m', is_flag=True, default=True, help='Enable real-time monitoring')
@@ -77,6 +77,13 @@ def deploy_group(ctx):
 def deploy_campaign(ctx, name, content_file, targets_file, channels, platforms,
                    duration, test_mode, compliance_approved, monitor):
     """Deploy a comprehensive threat campaign across multiple channels."""
+    
+    # Set default test mode to True for safety
+    if test_mode is None:
+        test_mode = True
+    
+    # Debug prints
+    console.print(f"[yellow]DEBUG: test_mode={test_mode}, compliance_approved={compliance_approved}[/yellow]")
 
     deployment_engine = ctx.obj['deployment_engine']
     platform_manager = ctx.obj['platform_manager']

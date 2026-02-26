@@ -7,8 +7,9 @@ This module provides comprehensive MITRE ATT&CK coverage including:
 - Detection recommendations mapped to data sources
 - Mitigation strategies with implementation guidance
 
-Issue: #42 - Implement MITRE ATT&CK Full Coverage
-Owner: David Onoja (@ocheme1107)
+Original Implementation: David Onoja (@ocheme1107)
+First documented in: https://github.com/threatsimgpt-AI/ThreatSimGPT-archive/issues/22
+Current Issue: #141 - Implement MITRE ATT&CK Full Coverage - Production Ready
 Track: Security/MITRE
 """
 

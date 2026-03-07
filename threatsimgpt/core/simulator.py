@@ -22,6 +22,7 @@ from threatsimgpt.core.models import (
     AttackStage
 )
 from threatsimgpt.llm.enhanced_prompts import generate_threat_prompt, ContentType
+from threatsimgpt.core.adaptive_difficulty import AdaptiveDifficultyEngine
 
 logger = logging.getLogger(__name__)
 
@@ -545,6 +546,9 @@ class ThreatSimulator:
         self.enable_enhanced = enable_enhanced
         self._active_simulations: Dict[str, SimulationResult] = {}
         
+        # Initialize adaptive difficulty engine
+        self.adaptive_difficulty = AdaptiveDifficultyEngine()
+        
         # Initialize enhanced pipeline if enabled
         if self.enable_enhanced:
             self.enhanced_pipeline = EnhancedScenarioPipeline()
@@ -655,9 +659,39 @@ class ThreatSimulator:
         if not self.enable_enhanced or not self.enhanced_pipeline:
             raise RuntimeError("Enhanced scenario generation is not enabled")
 
-        return await self.enhanced_pipeline.generate_enhanced_scenario(
+        # Generate base enhanced scenario
+        scenario = await self.enhanced_pipeline.generate_enhanced_scenario(
             threat_type, target_profile, custom_parameters
         )
+        
+        # Apply adaptive difficulty adjustment
+        try:
+            # Calculate optimal difficulty for target
+            difficulty_calculation = self.adaptive_difficulty.calculate_optimal_difficulty(target_profile)
+            
+            # Adjust scenario to match optimal difficulty
+            adjusted_scenario = self.adaptive_difficulty.adjust_scenario_difficulty(
+                scenario, difficulty_calculation.final_difficulty
+            )
+            
+            # Add difficulty calculation metadata
+            if not hasattr(adjusted_scenario, 'adaptive_metadata'):
+                adjusted_scenario.adaptive_metadata = {}
+            
+            adjusted_scenario.adaptive_metadata.update({
+                'original_difficulty': getattr(scenario, 'difficulty_level', 5),
+                'calculated_difficulty': difficulty_calculation.final_difficulty,
+                'confidence_score': difficulty_calculation.confidence_score,
+                'calculation_factors': difficulty_calculation.calculation_factors,
+                'recommendations': self.adaptive_difficulty.get_difficulty_recommendations(target_profile)
+            })
+            
+            logger.info(f"Generated enhanced scenario with adaptive difficulty: {difficulty_calculation.final_difficulty:.2f} (confidence: {difficulty_calculation.confidence_score:.2f})")
+            return adjusted_scenario
+            
+        except Exception as e:
+            logger.warning(f"Adaptive difficulty adjustment failed: {str(e)}, using original scenario")
+            return scenario
 
     async def _execute_stages(self, scenario: ThreatScenario, result: SimulationResult) -> None:
         """Execute the individual stages of a simulation.

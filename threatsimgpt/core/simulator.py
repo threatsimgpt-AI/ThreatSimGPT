@@ -1,7 +1,8 @@
 """Core threat simulation engine for ThreatSimGPT.
 
 This module provides the main simulation engine that orchestrates threat scenario
-execution using LLM providers and validation systems.
+execution using LLM providers and validation systems with enhanced detection-optimized
+scenario generation capabilities.
 """
 
 import asyncio
@@ -14,28 +15,545 @@ from threatsimgpt.core.models import (
     ThreatScenario,
     SimulationResult,
     SimulationStage,
-    SimulationStatus
+    SimulationStatus,
+    DetectionIndicator,
+    AttackPattern,
+    DetectionIndicatorType,
+    AttackStage
 )
 from threatsimgpt.llm.enhanced_prompts import generate_threat_prompt, ContentType
+from threatsimgpt.core.adaptive_difficulty import AdaptiveDifficultyEngine
 
 logger = logging.getLogger(__name__)
 
 
-class ThreatSimulator:
-    """Core threat simulation engine."""
+class EnhancedScenarioPipeline:
+    """Advanced pipeline for generating detection-optimized threat scenarios."""
+    
+    def __init__(self):
+        self.indicator_templates = self._load_indicator_templates()
+        self.attack_pattern_library = self._load_attack_patterns()
+    
+    def _load_indicator_templates(self) -> Dict[str, Any]:
+        """Load templates for common detection indicators."""
+        return {
+            "phishing_email": {
+                "email_event": {
+                    "subject_keywords": ["urgent", "verify", "suspended", "security", "account"],
+                    "attachment_names": ["invoice.exe", "document.pdf.exe", "secure.doc.zip"],
+                    "sender_patterns": ["noreply@", "security@", "notification@"],
+                    "link_domains": ["bit.ly", "tinyurl.com", "short.link"]
+                }
+            },
+            "powershell_attack": {
+                "process_creation": {
+                    "process_name": "powershell.exe",
+                    "command_line_patterns": [
+                        "-enc ", "-nop ", "-w hidden ", "IEX(", "DownloadString("
+                    ],
+                    "suspicious_commands": [
+                        "Invoke-Mimikatz", "Invoke-Expression", "Start-BitsTransfer"
+                    ]
+                },
+                "network_connection": {
+                    "destination_ports": [443, 8080, 8443],
+                    "protocols": ["TCP", "HTTPS"]
+                }
+            },
+            "lateral_movement": {
+                "process_creation": {
+                    "process_names": ["psexec.exe", "wmic.exe", "at.exe", "schtasks.exe"],
+                    "command_line_patterns": ["\\\\", "\\\\", "cmd.exe /c"]
+                },
+                "network_connection": {
+                    "destination_ports": [445, 135, 139, 3389],
+                    "protocols": ["SMB", "RPC", "RDP"]
+                }
+            },
+            "data_exfiltration": {
+                "network_connection": {
+                    "destination_ports": [21, 22, 443, 993, 465],
+                    "protocols": ["FTP", "SFTP", "HTTPS", "SMTPS"],
+                    "suspicious_domains": [".tk", ".ml", ".ga", ".cf", "pastebin.com"]
+                },
+                "file_access": {
+                    "file_patterns": ["*.zip", "*.rar", "*.7z", "*.encrypted"],
+                    "file_extensions": [".zip", ".rar", ".7z", ".pgp", ".gpg"]
+                }
+            }
+        }
+    
+    def _load_attack_patterns(self) -> Dict[str, Any]:
+        """Load common attack patterns with indicator sequences."""
+        return {
+            "spearphishing_initial_access": {
+                "name": "Spearphishing Initial Access",
+                "description": "Email-based initial access with malicious link/attachment",
+                "technique_id": "T1566.001",
+                "tactic_id": "TA0001",
+                "stages": [
+                    AttackStage.INITIAL_ACCESS,
+                    AttackStage.EXECUTION,
+                    AttackStage.PERSISTENCE
+                ],
+                "indicator_sequence": [
+                    DetectionIndicatorType.EMAIL_EVENT,
+                    DetectionIndicatorType.PROCESS_CREATION,
+                    DetectionIndicatorType.NETWORK_CONNECTION
+                ],
+                "time_windows": {
+                    "email_to_execution": 300,  # 5 minutes
+                    "execution_to_c2": 600       # 10 minutes
+                }
+            },
+            "powershell_persistence": {
+                "name": "PowerShell Persistence",
+                "description": "PowerShell-based persistence mechanism",
+                "technique_id": "T1059.001",
+                "tactic_id": "TA0003",
+                "stages": [AttackStage.EXECUTION, AttackStage.PERSISTENCE],
+                "indicator_sequence": [
+                    DetectionIndicatorType.PROCESS_CREATION,
+                    DetectionIndicatorType.REGISTRY_MODIFICATION,
+                    DetectionIndicatorType.PROCESS_CREATION
+                ],
+                "time_windows": {
+                    "execution_to_persistence": 120,  # 2 minutes
+                    "persistence_maintenance": 3600   # 1 hour
+                }
+            },
+            "lateral_movement_smb": {
+                "name": "Lateral Movement via SMB",
+                "description": "SMB-based lateral movement between systems",
+                "technique_id": "T1021.002",
+                "tactic_id": "TA0008",
+                "stages": [AttackStage.LATERAL_MOVEMENT, AttackStage.PRIVILEGE_ESCALATION],
+                "indicator_sequence": [
+                    DetectionIndicatorType.NETWORK_CONNECTION,
+                    DetectionIndicatorType.PROCESS_CREATION,
+                    DetectionIndicatorType.AUTHENTICATION_EVENT
+                ],
+                "time_windows": {
+                    "connection_to_execution": 180,  # 3 minutes
+                    "privilege_escalation": 900      # 15 minutes
+                }
+            }
+        }
+    
+    async def generate_enhanced_scenario(self, threat_type: str, target_profile: Dict[str, Any], custom_parameters: Optional[Dict[str, Any]] = None) -> ThreatScenario:
+        """Generate an enhanced threat scenario optimized for detection."""
+        
+        # Select appropriate attack pattern
+        attack_pattern = self._select_attack_pattern(threat_type, target_profile)
+        
+        # Generate detection indicators
+        indicators = await self._generate_detection_indicators(threat_type, attack_pattern, target_profile, custom_parameters)
+        
+        # Create attack patterns with indicator linking
+        attack_patterns = await self._create_attack_patterns(attack_pattern, indicators)
+        
+        # Optimize for detection
+        optimized_scenario = await self._optimize_scenario(threat_type, indicators, attack_patterns, target_profile)
+        
+        return optimized_scenario
+    
+    def _select_attack_pattern(self, threat_type: str, target_profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Select the most appropriate attack pattern based on threat type and target."""
+        
+        # Pattern selection logic
+        if "phishing" in threat_type.lower():
+            return self.attack_pattern_library["spearphishing_initial_access"]
+        elif "powershell" in threat_type.lower() or "malware" in threat_type.lower():
+            return self.attack_pattern_library["powershell_persistence"]
+        elif "lateral" in threat_type.lower() or "movement" in threat_type.lower():
+            return self.attack_pattern_library["lateral_movement_smb"]
+        else:
+            # Default to spearphishing
+            return self.attack_pattern_library["spearphishing_initial_access"]
+    
+    async def _generate_detection_indicators(self, threat_type: str, attack_pattern: Dict[str, Any], target_profile: Dict[str, Any], custom_parameters: Optional[Dict[str, Any]]) -> List[DetectionIndicator]:
+        """Generate detailed detection indicators for the scenario."""
+        
+        indicators = []
+        
+        # Get indicator templates for the threat type
+        template_key = self._get_template_key(threat_type)
+        templates = self.indicator_templates.get(template_key, {})
+        
+        # Generate indicators for each stage in the attack pattern
+        for i, indicator_type in enumerate(attack_pattern["indicator_sequence"]):
+            
+            if indicator_type == DetectionIndicatorType.EMAIL_EVENT:
+                email_indicators = self._generate_email_indicators(templates, attack_pattern, i)
+                indicators.extend(email_indicators)
+            
+            elif indicator_type == DetectionIndicatorType.PROCESS_CREATION:
+                process_indicators = self._generate_process_indicators(templates, attack_pattern, i)
+                indicators.extend(process_indicators)
+            
+            elif indicator_type == DetectionIndicatorType.NETWORK_CONNECTION:
+                network_indicators = self._generate_network_indicators(templates, attack_pattern, i)
+                indicators.extend(network_indicators)
+            
+            elif indicator_type == DetectionIndicatorType.REGISTRY_MODIFICATION:
+                registry_indicators = self._generate_registry_indicators(templates, attack_pattern, i)
+                indicators.extend(registry_indicators)
+            
+            elif indicator_type == DetectionIndicatorType.AUTHENTICATION_EVENT:
+                auth_indicators = self._generate_auth_indicators(templates, attack_pattern, i)
+                indicators.extend(auth_indicators)
+        
+        return indicators
+    
+    def _get_template_key(self, threat_type: str) -> str:
+        """Get the template key for a threat type."""
+        threat_lower = threat_type.lower()
+        if "phishing" in threat_lower:
+            return "phishing_email"
+        elif "powershell" in threat_lower:
+            return "powershell_attack"
+        elif "lateral" in threat_lower or "movement" in threat_lower:
+            return "lateral_movement"
+        elif "exfiltration" in threat_lower:
+            return "data_exfiltration"
+        else:
+            return "phishing_email"  # Default
+    
+    def _generate_email_indicators(self, templates: Dict[str, Any], attack_pattern: Dict[str, Any], stage_index: int) -> List[DetectionIndicator]:
+        """Generate email-related detection indicators."""
+        
+        indicators = []
+        email_templates = templates.get("email_event", {})
+        
+        # Generate suspicious email indicators
+        for keywords in email_templates.get("subject_keywords", [])[:3]:
+            indicator = DetectionIndicator(
+                indicator_type=DetectionIndicatorType.EMAIL_EVENT,
+                attack_stage=attack_pattern["stages"][stage_index] if stage_index < len(attack_pattern["stages"]) else AttackStage.INITIAL_ACCESS,
+                subject_keywords=[keywords],
+                sender_domains=email_templates.get("sender_patterns", ["suspicious@example.com"]),
+                link_urls=email_templates.get("link_domains", ["bit.ly/suspicious"]),
+                rarity_score=0.7,
+                false_positive_rate=0.2,
+                detection_confidence=0.8,
+                mitre_technique_id=attack_pattern["technique_id"],
+                mitre_tactic_id=attack_pattern["tactic_id"],
+                detection_logic=f"Email with suspicious subject containing '{keywords}'",
+                required_log_sources=["email_gateway", "office365"]
+            )
+            indicators.append(indicator)
+        
+        return indicators
+    
+    def _generate_process_indicators(self, templates: Dict[str, Any], attack_pattern: Dict[str, Any], stage_index: int) -> List[DetectionIndicator]:
+        """Generate process-related detection indicators."""
+        
+        indicators = []
+        process_templates = templates.get("process_creation", {})
+        
+        # Generate process creation indicators
+        process_names = process_templates.get("process_names", ["powershell.exe"])
+        for process_name in process_names[:2]:
+            
+            # Create multiple variations for the same process
+            for cmd_pattern in process_templates.get("command_line_patterns", [])[:2]:
+                indicator = DetectionIndicator(
+                    indicator_type=DetectionIndicatorType.PROCESS_CREATION,
+                    attack_stage=attack_pattern["stages"][stage_index] if stage_index < len(attack_pattern["stages"]) else AttackStage.EXECUTION,
+                    process_name=process_name,
+                    command_line=cmd_pattern + "malicious_payload",
+                    process_path=f"C:\\Windows\\System32\\{process_name}",
+                    rarity_score=0.8 if "powershell" in process_name.lower() else 0.6,
+                    false_positive_rate=0.15,
+                    detection_confidence=0.85,
+                    mitre_technique_id=attack_pattern["technique_id"],
+                    mitre_tactic_id=attack_pattern["tactic_id"],
+                    detection_logic=f"Suspicious {process_name} execution with encoded commands",
+                    required_log_sources=["windows_sysmon", "windows_powershell"]
+                )
+                indicators.append(indicator)
+        
+        return indicators
+    
+    def _generate_network_indicators(self, templates: Dict[str, Any], attack_pattern: Dict[str, Any], stage_index: int) -> List[DetectionIndicator]:
+        """Generate network-related detection indicators."""
+        
+        indicators = []
+        network_templates = templates.get("network_connection", {})
+        
+        # Generate network connection indicators
+        for port in network_templates.get("destination_ports", [443])[:3]:
+            indicator = DetectionIndicator(
+                indicator_type=DetectionIndicatorType.NETWORK_CONNECTION,
+                attack_stage=attack_pattern["stages"][stage_index] if stage_index < len(attack_pattern["stages"]) else AttackStage.COMMAND_CONTROL,
+                destination_ip="192.168.100.100",  # Example malicious IP
+                destination_port=port,
+                protocol=network_templates.get("protocols", ["TCP"])[0],
+                domain="malicious.example.com",
+                rarity_score=0.9,
+                false_positive_rate=0.1,
+                detection_confidence=0.9,
+                mitre_technique_id=attack_pattern["technique_id"],
+                mitre_tactic_id=attack_pattern["tactic_id"],
+                detection_logic=f"Network connection to suspicious port {port}",
+                required_log_sources=["windows_firewall", "network_proxy"]
+            )
+            indicators.append(indicator)
+        
+        return indicators
+    
+    def _generate_registry_indicators(self, templates: Dict[str, Any], attack_pattern: Dict[str, Any], stage_index: int) -> List[DetectionIndicator]:
+        """Generate registry modification indicators."""
+        
+        indicators = []
+        
+        # Common persistence registry keys
+        persistence_keys = [
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+        ]
+        
+        for key in persistence_keys[:2]:
+            indicator = DetectionIndicator(
+                indicator_type=DetectionIndicatorType.REGISTRY_MODIFICATION,
+                attack_stage=AttackStage.PERSISTENCE,
+                file_path=key,
+                rarity_score=0.8,
+                false_positive_rate=0.25,
+                detection_confidence=0.75,
+                mitre_technique_id="T1547.001",  # Registry Run Keys/Startup Folder
+                mitre_tactic_id="TA0003",
+                detection_logic=f"Registry modification in persistence key {key}",
+                required_log_sources=["windows_sysmon"]
+            )
+            indicators.append(indicator)
+        
+        return indicators
+    
+    def _generate_auth_indicators(self, templates: Dict[str, Any], attack_pattern: Dict[str, Any], stage_index: int) -> List[DetectionIndicator]:
+        """Generate authentication event indicators."""
+        
+        indicators = []
+        
+        # Suspicious authentication patterns
+        indicator = DetectionIndicator(
+            indicator_type=DetectionIndicatorType.AUTHENTICATION_EVENT,
+            attack_stage=AttackStage.LATERAL_MOVEMENT,
+            # Add authentication-specific fields
+            rarity_score=0.7,
+            false_positive_rate=0.2,
+            detection_confidence=0.8,
+            mitre_technique_id="T1021.002",  # SMB/Windows Admin Shares
+            mitre_tactic_id="TA0008",
+            detection_logic="Suspicious authentication event for lateral movement",
+            required_log_sources=["windows_security", "active_directory"]
+        )
+        indicators.append(indicator)
+        
+        return indicators
+    
+    async def _create_attack_patterns(self, attack_pattern_template: Dict[str, Any], indicators: List[DetectionIndicator]) -> List[AttackPattern]:
+        """Create structured attack patterns linking indicators."""
+        
+        patterns = []
+        
+        # Create main attack pattern
+        main_pattern = AttackPattern(
+            pattern_name=attack_pattern_template["name"],
+            pattern_description=attack_pattern_template["description"],
+            indicator_sequence=[ind.indicator_id for ind in indicators],
+            sequence_type="ordered",
+            typical_duration_seconds=sum(attack_pattern_template.get("time_windows", {}).values()),
+            primary_technique_id=attack_pattern_template["technique_id"],
+            secondary_techniques=[],
+            detection_difficulty="medium",
+            required_correlation=len(indicators) > 2
+        )
+        patterns.append(main_pattern)
+        
+        # Create sub-patterns for complex attacks
+        if len(indicators) > 3:
+            # Split into early and late stage patterns
+            early_indicators = indicators[:len(indicators)//2]
+            late_indicators = indicators[len(indicators)//2:]
+            
+            early_pattern = AttackPattern(
+                pattern_name=f"Early Stage - {attack_pattern_template['name']}",
+                pattern_description=f"Early indicators of {attack_pattern_template['description']}",
+                indicator_sequence=[ind.indicator_id for ind in early_indicators],
+                sequence_type="ordered",
+                primary_technique_id=attack_pattern_template["technique_id"],
+                detection_difficulty="easy",
+                required_correlation=False
+            )
+            patterns.append(early_pattern)
+        
+        return patterns
+    
+    async def _optimize_scenario(self, threat_type: str, indicators: List[DetectionIndicator], attack_patterns: List[AttackPattern], target_profile: Dict[str, Any]) -> ThreatScenario:
+        """Optimize scenario components for maximum detection effectiveness."""
+        
+        # Identify high-value indicators
+        high_value_indicators = self._identify_high_value_indicators(indicators)
+        
+        # Find correlation opportunities
+        correlation_opportunities = self._find_correlation_opportunities(indicators)
+        
+        # Suggest detection strategies
+        detection_strategies = self._suggest_detection_strategies(threat_type, indicators, target_profile)
+        
+        # Create enhanced scenario
+        scenario = ThreatScenario(
+            name=f"Enhanced {threat_type.title()} Scenario",
+            description=f"Detection-optimized scenario for {threat_type} attacks",
+            threat_type=threat_type,
+            difficulty_level=self._calculate_difficulty(indicators),
+            attack_patterns=attack_patterns,
+            detection_indicators=indicators,
+            target_profile=target_profile,
+            high_value_indicators=[ind.indicator_id for ind in high_value_indicators],
+            correlation_opportunities=correlation_opportunities,
+            suggested_rule_count=len(high_value_indicators) + len(correlation_opportunities),
+            priority_indicators=[ind.indicator_id for ind in high_value_indicators[:3]],
+            detection_strategies=detection_strategies
+        )
+        
+        return scenario
+    
+    def _identify_high_value_indicators(self, indicators: List[DetectionIndicator]) -> List[DetectionIndicator]:
+        """Identify indicators with highest detection value."""
+        
+        # Score indicators based on multiple factors
+        scored_indicators = []
+        for indicator in indicators:
+            score = (
+                indicator.detection_confidence * 0.3 +
+                (1 - indicator.false_positive_rate) * 0.3 +
+                indicator.rarity_score * 0.2 +
+                (1 if indicator.mitre_technique_id else 0) * 0.2
+            )
+            scored_indicators.append((indicator, score))
+        
+        # Sort by score and return top indicators
+        scored_indicators.sort(key=lambda x: x[1], reverse=True)
+        return [ind for ind, score in scored_indicators[:5]]
+    
+    def _find_correlation_opportunities(self, indicators: List[DetectionIndicator]) -> List[Dict[str, Any]]:
+        """Find opportunities for correlation-based detection."""
+        
+        opportunities = []
+        
+        # Group by process name
+        process_groups = {}
+        for ind in indicators:
+            if ind.process_name:
+                if ind.process_name not in process_groups:
+                    process_groups[ind.process_name] = []
+                process_groups[ind.process_name].append(ind)
+        
+        # Find processes with multiple indicators
+        for process, process_indicators in process_groups.items():
+            if len(process_indicators) > 1:
+                opportunities.append({
+                    "type": "process_correlation",
+                    "process": process,
+                    "indicator_count": len(process_indicators),
+                    "indicator_ids": [ind.indicator_id for ind in process_indicators],
+                    "time_window": 300
+                })
+        
+        # Find network-to-process correlations
+        network_indicators = [ind for ind in indicators if ind.indicator_type == DetectionIndicatorType.NETWORK_CONNECTION]
+        process_indicators = [ind for ind in indicators if ind.indicator_type == DetectionIndicatorType.PROCESS_CREATION]
+        
+        if network_indicators and process_indicators:
+            opportunities.append({
+                "type": "network_process_correlation",
+                "network_indicators": [ind.indicator_id for ind in network_indicators[:2]],
+                "process_indicators": [ind.indicator_id for ind in process_indicators[:2]],
+                "time_window": 180
+            })
+        
+        return opportunities
+    
+    def _suggest_detection_strategies(self, threat_type: str, indicators: List[DetectionIndicator], target_profile: Dict[str, Any]) -> List[str]:
+        """Suggest optimal detection strategies."""
+        
+        strategies = []
+        
+        # Analyze indicator types
+        indicator_types = set(ind.indicator_type for ind in indicators)
+        
+        if DetectionIndicatorType.EMAIL_EVENT in indicator_types:
+            strategies.append("Email gateway filtering with sender reputation analysis")
+            strategies.append("User training simulation with phishing awareness")
+        
+        if DetectionIndicatorType.PROCESS_CREATION in indicator_types:
+            strategies.append("Process creation monitoring with command-line analysis")
+            strategies.append("PowerShell script block logging and analysis")
+        
+        if DetectionIndicatorType.NETWORK_CONNECTION in indicator_types:
+            strategies.append("Network traffic analysis with domain reputation")
+            strategies.append("Egress filtering and C2 detection")
+        
+        if len(indicators) > 3:
+            strategies.append("Multi-stage attack correlation across log sources")
+            strategies.append("User behavior analytics for anomaly detection")
+        
+        # Target-specific strategies
+        if target_profile.get("industry") == "finance":
+            strategies.append("Financial transaction monitoring integration")
+        
+        if target_profile.get("size") == "large":
+            strategies.append("Enterprise-wide SIEM correlation rules")
+            strategies.append("Threat hunting automation with ML models")
+        
+        return strategies
+    
+    def _calculate_difficulty(self, indicators: List[DetectionIndicator]) -> int:
+        """Calculate scenario difficulty based on indicator complexity."""
+        
+        if not indicators:
+            return 5
+        
+        # Base difficulty on indicator complexity
+        avg_confidence = sum(ind.detection_confidence for ind in indicators) / len(indicators)
+        avg_rarity = sum(ind.rarity_score for ind in indicators) / len(indicators)
+        avg_fp_rate = sum(ind.false_positive_rate for ind in indicators) / len(indicators)
+        
+        # Higher confidence and rarity = easier to detect
+        difficulty_score = 10 - (avg_confidence * 3 + avg_rarity * 2 - avg_fp_rate * 2)
+        
+        return max(1, min(10, int(difficulty_score)))
 
-    def __init__(self, llm_provider: Optional[Any] = None, max_stages: int = 10) -> None:
+
+class ThreatSimulator:
+    """Core threat simulation engine with enhanced detection-optimized scenario generation."""
+
+    def __init__(self, llm_provider: Optional[Any] = None, max_stages: int = 10, enable_enhanced: bool = True) -> None:
         """Initialize the threat simulator.
 
         Args:
             llm_provider: LLM provider instance for content generation
             max_stages: Maximum number of simulation stages to execute
+            enable_enhanced: Enable enhanced detection-optimized scenario generation
         """
         from threatsimgpt.llm.manager import LLMManager
 
         self.llm_provider = llm_provider or LLMManager()
         self.max_stages = max_stages
+        self.enable_enhanced = enable_enhanced
         self._active_simulations: Dict[str, SimulationResult] = {}
+        
+        # Initialize adaptive difficulty engine
+        self.adaptive_difficulty = AdaptiveDifficultyEngine()
+        
+        # Initialize enhanced pipeline if enabled
+        if self.enable_enhanced:
+            self.enhanced_pipeline = EnhancedScenarioPipeline()
+        else:
+            self.enhanced_pipeline = None
 
     async def execute_simulation(self, scenario: ThreatScenario) -> SimulationResult:
         """Execute a threat simulation scenario.
@@ -69,6 +587,10 @@ class ThreatSimulator:
             # Execute simulation stages
             await self._execute_stages(scenario, result)
 
+            # Calculate quality metrics if enhanced features are enabled
+            if self.enable_enhanced and scenario.detection_indicators:
+                result.calculate_quality_metrics(scenario)
+
             # Mark as completed
             result.mark_completed(success=True)
             logger.info(f"Simulation completed successfully: {scenario.name}")
@@ -82,6 +604,94 @@ class ThreatSimulator:
             self._active_simulations.pop(result.result_id, None)
 
         return result
+
+    async def generate_and_execute_enhanced_scenario(
+        self, 
+        threat_type: str, 
+        target_profile: Dict[str, Any],
+        custom_parameters: Optional[Dict[str, Any]] = None
+    ) -> SimulationResult:
+        """Generate an enhanced scenario and execute it in one operation.
+
+        Args:
+            threat_type: Type of threat scenario to generate
+            target_profile: Target organization profile
+            custom_parameters: Optional custom parameters for scenario generation
+
+        Returns:
+            SimulationResult containing the execution results
+
+        Raises:
+            RuntimeError: If enhanced pipeline is not enabled
+        """
+        if not self.enable_enhanced or not self.enhanced_pipeline:
+            raise RuntimeError("Enhanced scenario generation is not enabled")
+
+        logger.info(f"Generating enhanced scenario for threat type: {threat_type}")
+
+        # Generate enhanced scenario
+        scenario = await self.enhanced_pipeline.generate_enhanced_scenario(
+            threat_type, target_profile, custom_parameters
+        )
+
+        # Execute the generated scenario
+        return await self.execute_simulation(scenario)
+
+    async def generate_enhanced_scenario_only(
+        self, 
+        threat_type: str, 
+        target_profile: Dict[str, Any],
+        custom_parameters: Optional[Dict[str, Any]] = None
+    ) -> ThreatScenario:
+        """Generate an enhanced scenario without executing it.
+
+        Args:
+            threat_type: Type of threat scenario to generate
+            target_profile: Target organization profile
+            custom_parameters: Optional custom parameters for scenario generation
+
+        Returns:
+            ThreatScenario with enhanced detection indicators
+
+        Raises:
+            RuntimeError: If enhanced pipeline is not enabled
+        """
+        if not self.enable_enhanced or not self.enhanced_pipeline:
+            raise RuntimeError("Enhanced scenario generation is not enabled")
+
+        # Generate base enhanced scenario
+        scenario = await self.enhanced_pipeline.generate_enhanced_scenario(
+            threat_type, target_profile, custom_parameters
+        )
+        
+        # Apply adaptive difficulty adjustment
+        try:
+            # Calculate optimal difficulty for target
+            difficulty_calculation = self.adaptive_difficulty.calculate_optimal_difficulty(target_profile)
+            
+            # Adjust scenario to match optimal difficulty
+            adjusted_scenario = self.adaptive_difficulty.adjust_scenario_difficulty(
+                scenario, difficulty_calculation.final_difficulty
+            )
+            
+            # Add difficulty calculation metadata
+            if not hasattr(adjusted_scenario, 'adaptive_metadata'):
+                adjusted_scenario.adaptive_metadata = {}
+            
+            adjusted_scenario.adaptive_metadata.update({
+                'original_difficulty': getattr(scenario, 'difficulty_level', 5),
+                'calculated_difficulty': difficulty_calculation.final_difficulty,
+                'confidence_score': difficulty_calculation.confidence_score,
+                'calculation_factors': difficulty_calculation.calculation_factors,
+                'recommendations': self.adaptive_difficulty.get_difficulty_recommendations(target_profile)
+            })
+            
+            logger.info(f"Generated enhanced scenario with adaptive difficulty: {difficulty_calculation.final_difficulty:.2f} (confidence: {difficulty_calculation.confidence_score:.2f})")
+            return adjusted_scenario
+            
+        except Exception as e:
+            logger.warning(f"Adaptive difficulty adjustment failed: {str(e)}, using original scenario")
+            return scenario
 
     async def _execute_stages(self, scenario: ThreatScenario, result: SimulationResult) -> None:
         """Execute the individual stages of a simulation.

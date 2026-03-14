@@ -83,7 +83,7 @@ def gather(target: str, types: tuple, output: Optional[Path], format: str, force
                     force_refresh=force_refresh
                 )
 
-                progress.complete_task(task)
+                progress.update(task, completed=100)
 
                 # Display results
                 if format == "table":
@@ -99,7 +99,7 @@ def gather(target: str, types: tuple, output: Optional[Path], format: str, force
                     console.print(f"\n[green]Results saved to: {output}[/green]")
 
             except Exception as e:
-                progress.complete_task(task)
+                progress.update(task, completed=100)
                 console.print(f"[red]Intelligence gathering failed: {str(e)}[/red]")
 
     asyncio.run(_gather_intelligence())

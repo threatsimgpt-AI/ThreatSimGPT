@@ -1,0 +1,124 @@
+{{- range .Values.workers }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["python", "-m", "threatsimgpt.workers.consumer"]
+          ports:
+            - containerPort: 9102
+          env:
+            - name: REDIS_URL
+              {{- if $.Values.external.redis.enabled }}
+              value: {{ $.Values.external.redis.url | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: REDIS_URL
+              {{- end }}
+            - name: WORKER_QUEUES
+              value: "{{ .queues }}"
+            - name: WORKER_CONCURRENCY
+              value: "{{ .concurrency }}"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "{{ $.Values.metrics.workerPort }}"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: OPENAI_API_KEY
+            - name: NEO4J_PASSWORD
+              {{- if $.Values.external.neo4j.enabled }}
+              value: {{ $.Values.external.neo4j.password | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: NEO4J_PASSWORD
+              {{- end }}
+            - name: NEO4J_URI
+              {{- if $.Values.external.neo4j.enabled }}
+              value: {{ $.Values.external.neo4j.uri | quote }}
+              {{- else }}
+              value: ""
+              {{- end }}
+            {{- if $.Values.external.redis.tls.secretName }}
+            - name: REDIS_SSL_CA
+              value: "/etc/threatsimgpt/tls/redis/{{ $.Values.external.redis.tls.caKey }}"
+            - name: REDIS_SSL_CERT
+              value: "/etc/threatsimgpt/tls/redis/{{ $.Values.external.redis.tls.certKey }}"
+            - name: REDIS_SSL_KEY
+              value: "/etc/threatsimgpt/tls/redis/{{ $.Values.external.redis.tls.keyKey }}"
+            {{- end }}
+          resources:
+{{ toYaml .resources | indent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: data
+              mountPath: /app/data
+            - name: generated-content
+              mountPath: /app/generated_content
+            {{- if $.Values.external.redis.tls.secretName }}
+            - name: redis-tls
+              mountPath: /etc/threatsimgpt/tls/redis
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ if $.Values.config.existingConfigMap }}{{ $.Values.config.existingConfigMap }}{{ else }}{{ include "threatsimgpt.fullname" $ }}-config{{ end }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "threatsimgpt.fullname" $ }}-data
+        - name: generated-content
+          persistentVolumeClaim:
+            claimName: {{ include "threatsimgpt.fullname" $ }}-generated-content
+        {{- if $.Values.external.redis.tls.secretName }}
+        - name: redis-tls
+          secret:
+            secretName: {{ $.Values.external.redis.tls.secretName }}
+        {{- end }}
+---
+{{- if $.Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  ports:
+    - name: metrics
+      port: {{ $.Values.metrics.workerPort }}
+      targetPort: {{ $.Values.metrics.workerPort }}
+  selector:
+    app: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+---
+{{- end }}
+---
+{{- end }}

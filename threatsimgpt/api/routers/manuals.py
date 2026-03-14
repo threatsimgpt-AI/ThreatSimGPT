@@ -12,6 +12,7 @@ from enum import Enum
 
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -629,21 +630,47 @@ async def bulk_generate_manuals(
 
     task_id = str(uuid.uuid4())
 
-    # Queue background generation
-    background_tasks.add_task(
-        _background_bulk_generate,
-        task_id,
-        request.teams,
-        request.threat_type,
-        request.industry,
-        request.quality,
-    )
+    queued = False
+    redis_url = os.getenv("REDIS_URL")
+
+    if redis_url:
+        try:
+            from threatsimgpt.workers.queue import RedisQueue
+
+            queue = RedisQueue(redis_url)
+            await queue.connect()
+            await queue.enqueue(
+                queue_name="manuals",
+                message_type="manuals.bulk_generate",
+                payload={
+                    "task_id": task_id,
+                    "teams": [team.value for team in request.teams],
+                    "threat_type": request.threat_type.value,
+                    "industry": request.industry.value,
+                    "quality": request.quality.value,
+                },
+                message_id=task_id,
+            )
+            await queue.close()
+            queued = True
+        except Exception as exc:
+            logger.error("Failed to enqueue manual generation: %s", exc)
+
+    if not queued:
+        background_tasks.add_task(
+            _background_bulk_generate,
+            task_id,
+            request.teams,
+            request.threat_type,
+            request.industry,
+            request.quality,
+        )
 
     return BulkGenerationResponse(
         task_id=task_id,
         teams_queued=request.teams,
         estimated_time_minutes=len(request.teams) * 2.0,  # ~2 min per team
-        status="queued",
+        status="queued" if queued else "queued_local",
     )
 
 

@@ -1,0 +1,166 @@
+namespace: threatsimgpt
+
+image:
+  repository: threatsimgpt
+  tag: latest
+  pullPolicy: IfNotPresent
+
+config:
+  existingConfigMap: ""
+  configFile: config.yaml
+
+secrets:
+  create: false
+  name: threatsimgpt-secrets
+  data: {}
+
+api:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+workers:
+  - name: simulation
+    queues: "simulation"
+    replicas: 1
+    concurrency: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+  - name: manuals
+    queues: "manuals"
+    replicas: 1
+    concurrency: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+  - name: feedback
+    queues: "feedback"
+    replicas: 1
+    concurrency: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  - name: rag-ingest
+    queues: "rag_ingest"
+    replicas: 1
+    concurrency: 1
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  - name: rag-generate
+    queues: "rag_generate"
+    replicas: 1
+    concurrency: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+  - name: deployment
+    queues: "deployment"
+    replicas: 1
+    concurrency: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+hpa:
+  enabled: true
+  api:
+    minReplicas: 2
+    maxReplicas: 6
+    averageUtilization: 70
+  workers:
+    minReplicas: 1
+    maxReplicas: 4
+    averageUtilization: 70
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 20Gi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storage: 5Gi
+
+metrics:
+  enabled: true
+  workerPort: 9102
+  serviceMonitor:
+    enabled: false
+    labels: {}
+    interval: 15s
+
+external:
+  postgres:
+    enabled: false
+    url: ""
+    sslMode: "require"
+    tls:
+      secretName: ""
+      rootCertKey: ""
+      certKey: ""
+      keyKey: ""
+  redis:
+    enabled: false
+    url: ""
+    tlsEnabled: true
+    tls:
+      secretName: ""
+      caKey: ""
+      certKey: ""
+      keyKey: ""
+  neo4j:
+    enabled: false
+    uri: ""
+    user: "neo4j"
+    password: ""
+    tlsEnabled: true
+
+persistence:
+  data: 20Gi
+  generatedContent: 20Gi
+  reports: 10Gi
+
+ollama:
+  enabled: false
+  image: ollama/ollama:latest
+  storage: 50Gi
+  resources:
+    requests:
+      memory: 4Gi
+    limits:
+      memory: 8Gi

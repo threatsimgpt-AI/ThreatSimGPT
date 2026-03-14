@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: threatsimgpt-redis
+  namespace: threatsimgpt
+  labels:
+    app: threatsimgpt-redis
+spec:
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: threatsimgpt-redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: threatsimgpt-redis
+  namespace: threatsimgpt
+spec:
+  serviceName: threatsimgpt-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threatsimgpt-redis
+  template:
+    metadata:
+      labels:
+        app: threatsimgpt-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - "redis-server"
+            - "--appendonly"
+            - "yes"
+            - "--maxmemory"
+            - "512mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

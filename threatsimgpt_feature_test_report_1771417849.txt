@@ -1,0 +1,86 @@
+================================================================================
+THREATSIMGPT COMPREHENSIVE FEATURE TEST REPORT
+================================================================================
+Version: 0.1.0
+Test Date: 2026-02-18 12:30:49
+Total Tests: 17
+Passed: 12
+Failed: 5
+Success Rate: 70.6%
+
+## CLI Basic Commands
+--------------------------------------------------
+✓ PASS Version Command (1.27s)
+    version_output: ThreatSimGPT, version 0.1.0
+
+✓ PASS Help Command (1.05s)
+    help_available: True
+
+✓ PASS Status Command (1.04s)
+    status_available: True
+
+## Template Management
+--------------------------------------------------
+✓ PASS List Templates (1.05s)
+    template_count: 13
+    templates_exist: True
+
+✓ PASS Validate Templates (1.05s)
+    validation_run: True
+    validation_output:  No templates directory found.
+
+
+✓ PASS Template Health Check (1.04s)
+    health_check_run: True
+
+## Simulation Features
+--------------------------------------------------
+✓ PASS Dry Run Simulation (1.03s)
+    dry_run_successful: True
+    template_used: templates/executive_phishing.yaml
+
+✓ PASS Mock Provider Simulation (0.00s)
+    skipped: Dry run mode enabled
+
+## LLM Features
+--------------------------------------------------
+✗ FAIL List Providers (1.04s)
+    Error: LLM providers list command failed with exit code 2
+
+✓ PASS Connection Test (0.00s)
+    skipped: Dry run mode enabled
+
+## Dataset Features
+--------------------------------------------------
+✓ PASS List Datasets (1.07s)
+    datasets_listed: True
+
+✗ FAIL Dataset Statistics (1.03s)
+    Error: Dataset stats command failed with exit code 2
+
+## Configuration
+--------------------------------------------------
+✗ FAIL Show Configuration (1.05s)
+    Error: Config show command failed with exit code 2
+
+✗ FAIL Validate Configuration (1.04s)
+    Error: Config validation failed with exit code 2
+
+## API Features
+--------------------------------------------------
+✓ PASS API Server Start/Stop (5.03s)
+    api_health_check: request_error: HTTPConnectionPool(host='127.0.0.1', port=8999): Max retries exceeded with url: /health (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=8999): Failed to establish a new connection: [Errno 61] Connection refused"))
+    api_docs_available: False
+    api_server_started: True
+
+## Intelligence Features
+--------------------------------------------------
+✗ FAIL Intelligence Command (1.06s)
+    Error: Intelligence command help failed with exit code 2
+
+## Detection Features
+--------------------------------------------------
+✓ PASS Detection Command (1.02s)
+    detection_command_available: True
+
+================================================================================

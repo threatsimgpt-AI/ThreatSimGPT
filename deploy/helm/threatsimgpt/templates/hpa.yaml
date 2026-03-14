@@ -1,0 +1,48 @@
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "threatsimgpt.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "threatsimgpt.fullname" . }}-api
+  minReplicas: {{ .Values.hpa.api.minReplicas }}
+  maxReplicas: {{ .Values.hpa.api.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.api.averageUtilization }}
+---
+{{- range .Values.workers }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "threatsimgpt.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "threatsimgpt.fullname" $ }}-worker-{{ .name }}
+  minReplicas: {{ $.Values.hpa.workers.minReplicas }}
+  maxReplicas: {{ $.Values.hpa.workers.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $.Values.hpa.workers.averageUtilization }}
+---
+{{- end }}
+{{- end }}

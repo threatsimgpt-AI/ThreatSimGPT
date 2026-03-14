@@ -30,9 +30,16 @@ requests>=2.31.0
 # ================================
 # Data Science (Essential only)
 # ================================
-numpy>=1.26.2
-scikit-learn>=1.3.2
+# Using OpenBLAS instead of MKL to avoid OpenMP conflicts
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
 psutil>=5.9.6
+
+# Note: To ensure OpenMP-free installation on macOS:
+# 1. Install nomkl: conda install nomkl
+# 2. Install with OpenBLAS: conda install numpy scipy scikit-learn nomkl
+# 3. Or use pip with specific flags: pip install numpy scipy scikit-learn --no-binary numpy,scipy,scikit-learn
 
 # ================================
 # Database

@@ -10,7 +10,7 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
-# Add project root directory to path
+# Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -101,7 +101,7 @@ def mock_llm_provider():
 def mock_llm_manager(mock_llm_provider):
     """Provide mock LLM manager."""
     try:
-        from threatsimgpt.llm.manager import LLMManager
+        from src.threatsimgpt.llm.manager import LLMManager
         manager = LLMManager(config={"default_provider": "mock"})
         manager._providers = {"mock": mock_llm_provider}
         manager._active_provider = mock_llm_provider

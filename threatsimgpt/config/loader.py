@@ -73,6 +73,7 @@ class ThreatSimGPTConfig(BaseModel):
     # Optional configurations
     templates: Dict[str, Any] = Field(default_factory=dict)
     deployment: Dict[str, Any] = Field(default_factory=dict)
+    integrations: Dict[str, Any] = Field(default_factory=dict)
     intelligence: Dict[str, Any] = Field(default_factory=dict)
     database: Dict[str, Any] = Field(default_factory=dict)
 

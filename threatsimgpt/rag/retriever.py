@@ -15,8 +15,8 @@ Enhanced with:
 import asyncio
 import logging
 import re
+import secrets
 import time
-import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -79,7 +79,7 @@ class RetryHandler:
         )
         
         if self.config.jitter:
-            delay *= (0.5 + random.random() * 0.5)
+            delay *= (0.5 + secrets.randbelow(1001) / 2000)  # 0.5 to 1.0 range using cryptographically secure random
         
         return delay
     

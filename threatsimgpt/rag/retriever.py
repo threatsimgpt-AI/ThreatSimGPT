@@ -1,17 +1,25 @@
 """
-RAG Retriever Module
-====================
+RAG Retriever Module - Enhanced
+===============================
 
 Hybrid retrieval system combining semantic search with keyword-based
 filtering for optimal threat intelligence retrieval.
+
+Enhanced with:
+- Improved error handling and retry logic
+- Resource management integration
+- Performance optimizations
+- Better query processing
 """
 
 import asyncio
 import logging
 import re
+import secrets
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -19,6 +27,85 @@ from .models import Chunk, SearchResult, IntelligenceSource
 from .config import RetrieverConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# Error Handling Integration
+# ==========================================
+
+class RetrievalError(Exception):
+    """Base exception for retrieval errors."""
+    def __init__(self, message: str, query: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message = message
+        self.query = query
+        self.details = details or {}
+        self.timestamp = datetime.now()
+
+
+class ConnectionError(RetrievalError):
+    """Connection-related errors."""
+    pass
+
+
+class TimeoutError(RetrievalError):
+    """Timeout-related errors."""
+    pass
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for retry logic."""
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 60.0
+    exponential_base: float = 2.0
+    jitter: bool = True
+    retryable_exceptions: List[type] = field(default_factory=lambda: [ConnectionError, TimeoutError])
+
+
+class RetryHandler:
+    """Handles retry logic with exponential backoff."""
+    
+    def __init__(self, config: RetryConfig):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+    
+    def calculate_delay(self, attempt: int) -> float:
+        """Calculate delay for retry attempt with exponential backoff and jitter."""
+        delay = min(
+            self.config.base_delay * (self.config.exponential_base ** (attempt - 1)),
+            self.config.max_delay
+        )
+        
+        if self.config.jitter:
+            delay *= (0.5 + secrets.randbelow(1001) / 2000)  # 0.5 to 1.0 range using cryptographically secure random
+        
+        return delay
+    
+    def is_retryable(self, exception: Exception) -> bool:
+        """Check if an exception is retryable."""
+        return any(isinstance(exception, exc_type) for exc_type in self.config.retryable_exceptions)
+    
+    async def execute_with_retry(self, func, *args, context: Optional[str] = None, **kwargs) -> Any:
+        """Execute a function with retry logic."""
+        last_exception = None
+        
+        for attempt in range(1, self.config.max_attempts + 1):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                
+                if attempt == self.config.max_attempts or not self.is_retryable(e):
+                    self.logger.error(f"Failed after {attempt} attempts. Context: {context}. Error: {e}")
+                    raise
+                
+                delay = self.calculate_delay(attempt)
+                self.logger.warning(f"Attempt {attempt} failed. Retrying in {delay:.2f}s. Context: {context}. Error: {e}")
+                await asyncio.sleep(delay)
+        
+        raise last_exception
 
 
 # ==========================================
@@ -36,7 +123,7 @@ class QueryIntent(Enum):
     GENERAL = "general"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessedQuery:
     """Processed and enriched query."""
     original_query: str
@@ -68,12 +155,12 @@ class QueryProcessor:
     CVE_PATTERN = re.compile(r'CVE-\d{4}-\d+', re.IGNORECASE)
 
     # Threat intelligence keywords
-    THREAT_KEYWORDS = {
+    THREAT_KEYWORDS = [
         'phishing', 'ransomware', 'malware', 'botnet', 'ddos',
         'apt', 'backdoor', 'trojan', 'worm', 'exploit', 'vulnerability',
         'credential', 'exfiltration', 'lateral', 'persistence', 'privilege',
         'spear', 'whaling', 'vishing', 'smishing', 'bec', 'fraud',
-    }
+    ]
 
     # Synonym expansions
     SYNONYMS = {
@@ -89,38 +176,48 @@ class QueryProcessor:
         self.config = config
 
     def process(self, query: str) -> ProcessedQuery:
-        """Process and enrich a query."""
-        # Normalize
-        normalized = self._normalize(query)
+        """Process and enrich a query with error handling."""
+        try:
+            # Validate input
+            if not query or len(query.strip()) < 3:
+                raise RetrievalError("Query must be at least 3 characters long", query=query)
+            
+            # Normalize
+            normalized = self._normalize(query)
 
-        # Extract entities
-        entities = self._extract_entities(query)
+            # Extract entities
+            entities = self._extract_entities(query)
 
-        # Extract keywords
-        keywords = self._extract_keywords(normalized)
+            # Extract keywords
+            keywords = self._extract_keywords(normalized)
 
-        # Classify intent
-        intent = self._classify_intent(normalized, entities, keywords)
+            # Classify intent
+            intent = self._classify_intent(normalized, entities, keywords)
 
-        # Expand query
-        expanded = self._expand_query(keywords)
+            # Expand query
+            expanded = self._expand_query(keywords)
 
-        # Generate filters
-        filters = self._generate_filters(entities, intent)
+            # Generate filters
+            filters = self._generate_filters(entities, intent)
 
-        # Calculate confidence
-        confidence = self._calculate_confidence(entities, keywords)
+            # Calculate confidence
+            confidence = self._calculate_confidence(entities, keywords, intent)
 
-        return ProcessedQuery(
-            original_query=query,
-            normalized_query=normalized,
-            intent=intent,
-            entities=entities,
-            keywords=keywords,
-            filters=filters,
-            expanded_terms=expanded,
-            confidence=confidence
-        )
+            return ProcessedQuery(
+                original_query=query,
+                normalized_query=normalized,
+                intent=intent,
+                entities=entities,
+                keywords=keywords,
+                filters=filters,
+                expanded_terms=expanded,
+                confidence=confidence
+            )
+        except Exception as e:
+            if isinstance(e, RetrievalError):
+                raise
+            logger.error(f"Query processing failed: {e}")
+            raise RetrievalError(f"Failed to process query: {str(e)}", query=query)
 
     def _normalize(self, query: str) -> str:
         """Normalize query text."""
@@ -133,12 +230,13 @@ class QueryProcessor:
         return normalized
 
     def _extract_entities(self, query: str) -> Dict[str, List[str]]:
-        """Extract named entities from query."""
+        """Extract named entities from query with enhanced patterns."""
         entities = {
             'techniques': [],
             'tactics': [],
             'cves': [],
             'threat_actors': [],
+            'indicators': []
         }
 
         # Extract MITRE techniques
@@ -152,6 +250,28 @@ class QueryProcessor:
         # Extract CVEs
         cves = self.CVE_PATTERN.findall(query)
         entities['cves'] = [c.upper() for c in cves]
+        
+        # Extract threat actors (enhanced patterns)
+        threat_actor_patterns = [
+            r'\b(apt\d{1,2})\b',
+            r'\b(lazarus|fancy bear|cozy bear|equation group)\b',
+            r'\b(solarwinds|stuxnet|wannacry|notpetya)\b'
+        ]
+        
+        for pattern in threat_actor_patterns:
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            entities['threat_actors'].extend([match.lower() for match in matches])
+        
+        # Extract indicators (IPs, domains, hashes)
+        ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+        domain_pattern = r'\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+        hash_pattern = r'\b[a-fA-F0-9]{32,64}\b'
+        
+        entities['indicators'] = [
+            *re.findall(ip_pattern, query),
+            *re.findall(domain_pattern, query),
+            *re.findall(hash_pattern, query)
+        ]
 
         return entities
 
@@ -177,7 +297,11 @@ class QueryProcessor:
         """Classify query intent."""
         # Check for technique lookup
         if entities['techniques'] or entities['tactics']:
-            return QueryIntent.TECHNIQUE_SEARCH
+            # Check if it's specifically about techniques or general threat
+            if entities['threat_actors'] or len(keywords) > 1:
+                return QueryIntent.THREAT_LOOKUP
+            else:
+                return QueryIntent.TECHNIQUE_SEARCH
 
         # Check for CVE lookup
         if entities['cves']:
@@ -242,17 +366,26 @@ class QueryProcessor:
     def _calculate_confidence(
         self,
         entities: Dict[str, List[str]],
-        keywords: List[str]
+        keywords: List[str],
+        intent: QueryIntent
     ) -> float:
-        """Calculate query understanding confidence."""
+        """Calculate query understanding confidence with enhanced scoring."""
         score = 0.5  # Base score
 
         # Boost for entities
         entity_count = sum(len(v) for v in entities.values())
-        score += min(entity_count * 0.1, 0.3)
+        score += min(entity_count * 0.05, 0.3)
 
         # Boost for keywords
-        score += min(len(keywords) * 0.05, 0.2)
+        score += min(len(keywords) * 0.02, 0.2)
+        
+        # Intent specificity bonus
+        if intent != QueryIntent.GENERAL:
+            score += 0.1
+        
+        # Threat keyword bonus
+        threat_keywords_found = sum(1 for kw in keywords if kw in self.THREAT_KEYWORDS)
+        score += min(threat_keywords_found * 0.05, 0.2)
 
         return min(score, 1.0)
 

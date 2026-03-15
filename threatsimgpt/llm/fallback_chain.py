@@ -1025,23 +1025,232 @@ class ModelFallbackChain:
         raise AllProvidersFailedError(errors=errors)
     
     # ========================================================================
-    # Metrics & Status
+    # Metrics & Status (Issue #128: Enhanced with SLA computation)
     # ========================================================================
     
     def get_availability(self) -> float:
-        """Get overall availability ratio."""
-        return self._metrics.get_availability()
+        """Get overall availability ratio.
+        
+        Issue #128: Now includes validation and bounds checking.
+        
+        Returns:
+            Availability ratio between 0.0 and 1.0
+        """
+        raw_availability = self._metrics.get_availability()
+        # Ensure bounds (defensive programming)
+        return max(0.0, min(1.0, raw_availability))
     
     def get_provider_availability(self, name: str) -> float:
-        """Get availability for a specific provider."""
-        return self._metrics.get_availability(name)
+        """Get availability for a specific provider.
+        
+        Issue #128: Now includes validation for unknown providers.
+        
+        Args:
+            name: Provider name
+            
+        Returns:
+            Availability ratio between 0.0 and 1.0, or 0.0 if provider unknown
+        """
+        if name not in self._providers:
+            logger.warning(f"Requested availability for unknown provider: {name}")
+            return 0.0
+        
+        raw_availability = self._metrics.get_availability(name)
+        return max(0.0, min(1.0, raw_availability))
     
     def get_metrics_summary(self) -> Dict[str, Any]:
-        """Get comprehensive metrics summary."""
-        return self._metrics.get_summary()
+        """Get comprehensive metrics summary with SLA computations.
+        
+        Issue #128: Enhanced to include SLA analysis, trend indicators,
+        and actionable recommendations instead of simple pass-through.
+        
+        Returns:
+            Dict containing raw metrics plus computed SLA insights
+        """
+        raw_summary = self._metrics.get_summary()
+        
+        # Issue #128: Add SLA computation layer
+        sla_status = self._compute_sla_status()
+        provider_rankings = self._compute_provider_rankings()
+        recommendations = self._generate_recommendations(sla_status, provider_rankings)
+        
+        return {
+            **raw_summary,
+            "sla": sla_status,
+            "provider_rankings": provider_rankings,
+            "recommendations": recommendations,
+        }
+    
+    def _compute_sla_status(self) -> Dict[str, Any]:
+        """Compute SLA status with margin analysis.
+        
+        Issue #128: Provides meaningful SLA computation including:
+        - Current vs target comparison
+        - Safety margin calculation
+        - Risk level assessment
+        - Projected availability trend
+        """
+        current = self.get_availability()
+        target = self._config.target_availability
+        
+        # Calculate margin (how much buffer we have)
+        margin = current - target
+        margin_percentage = (margin / target * 100) if target > 0 else 0
+        
+        # Determine risk level based on margin
+        if margin >= 0.005:  # >= 0.5% above target
+            risk_level = "low"
+        elif margin >= 0:  # Meeting target but tight
+            risk_level = "medium"
+        elif margin >= -0.005:  # Slightly below target
+            risk_level = "high"
+        else:  # Significantly below target
+            risk_level = "critical"
+        
+        # Calculate error budget
+        # For 99.9% SLA, error budget is 0.1% of requests
+        error_budget_total = 1.0 - target
+        error_budget_used = 1.0 - current
+        error_budget_remaining = error_budget_total - error_budget_used
+        error_budget_percentage = (
+            (error_budget_remaining / error_budget_total * 100)
+            if error_budget_total > 0 else 0
+        )
+        
+        return {
+            "target": target,
+            "current": current,
+            "target_met": current >= target,
+            "margin": margin,
+            "margin_percentage": round(margin_percentage, 2),
+            "risk_level": risk_level,
+            "error_budget": {
+                "total": error_budget_total,
+                "used": error_budget_used,
+                "remaining": max(0, error_budget_remaining),
+                "remaining_percentage": round(max(0, error_budget_percentage), 2),
+            }
+        }
+    
+    def _compute_provider_rankings(self) -> List[Dict[str, Any]]:
+        """Rank providers by reliability and performance.
+        
+        Issue #128: Provides actionable provider rankings based on
+        availability, latency, and health status.
+        """
+        rankings = []
+        
+        for name, entry in self._providers.items():
+            availability = self.get_provider_availability(name)
+            latency = self._metrics.get_latency_percentile(0.95, name)
+            error_rate = self._metrics.get_error_rate(name)
+            request_count = self._metrics.get_request_count(name)
+            
+            # Compute composite score (higher is better)
+            # Availability weighted highest, then latency (inverted), then volume
+            latency_score = (1000 - min(latency or 1000, 1000)) / 1000  # Normalize
+            composite_score = (
+                availability * 0.6 +
+                latency_score * 0.3 +
+                min(request_count / 100, 1.0) * 0.1  # Volume factor
+            )
+            
+            rankings.append({
+                "name": name,
+                "enabled": entry.enabled,
+                "availability": round(availability, 4),
+                "error_rate": round(error_rate, 4),
+                "p95_latency_ms": latency,
+                "request_count": request_count,
+                "health_status": entry.health.status.value,
+                "circuit_state": entry.circuit_state.state.value,
+                "composite_score": round(composite_score, 4),
+            })
+        
+        # Sort by composite score (descending)
+        rankings.sort(key=lambda x: x["composite_score"], reverse=True)
+        
+        # Add rank position
+        for i, r in enumerate(rankings):
+            r["rank"] = i + 1
+        
+        return rankings
+    
+    def _generate_recommendations(
+        self,
+        sla_status: Dict[str, Any],
+        provider_rankings: List[Dict[str, Any]]
+    ) -> List[str]:
+        """Generate actionable recommendations based on metrics analysis.
+        
+        Issue #128: Provides meaningful recommendations instead of raw data.
+        """
+        recommendations = []
+        
+        # SLA-based recommendations
+        risk_level = sla_status.get("risk_level", "low")
+        error_budget = sla_status.get("error_budget", {})
+        
+        if risk_level == "critical":
+            recommendations.append(
+                "CRITICAL: SLA target not met. Immediate action required."
+            )
+            recommendations.append(
+                "Consider enabling additional backup providers."
+            )
+        elif risk_level == "high":
+            recommendations.append(
+                "WARNING: SLA margin is thin. Monitor closely."
+            )
+        
+        if error_budget.get("remaining_percentage", 100) < 20:
+            recommendations.append(
+                f"Error budget nearly exhausted ({error_budget.get('remaining_percentage', 0):.1f}% remaining)."
+            )
+        
+        # Provider-based recommendations
+        unhealthy_providers = [
+            p for p in provider_rankings
+            if p["health_status"] == "unhealthy"
+        ]
+        if unhealthy_providers:
+            names = ", ".join(p["name"] for p in unhealthy_providers)
+            recommendations.append(
+                f"Unhealthy providers detected: {names}. Investigate root cause."
+            )
+        
+        # Circuit breaker recommendations
+        open_circuits = [
+            p for p in provider_rankings
+            if p["circuit_state"] == "open"
+        ]
+        if open_circuits:
+            names = ", ".join(p["name"] for p in open_circuits)
+            recommendations.append(
+                f"Circuit breakers open for: {names}. These providers are temporarily disabled."
+            )
+        
+        # High latency recommendations
+        slow_providers = [
+            p for p in provider_rankings
+            if p["p95_latency_ms"] and p["p95_latency_ms"] > 5000  # > 5 seconds
+        ]
+        if slow_providers:
+            names = ", ".join(p["name"] for p in slow_providers)
+            recommendations.append(
+                f"High latency detected for: {names}. Consider adjusting timeouts or priorities."
+            )
+        
+        # If everything is fine
+        if not recommendations:
+            recommendations.append("All systems operating normally. SLA target met.")
+        
+        return recommendations
     
     async def get_status(self) -> Dict[str, Any]:
-        """Get full chain status including all providers.
+        """Get full chain status including all providers and SLA analysis.
+        
+        Issue #128: Enhanced with SLA computation and recommendations.
         
         Note: This is async because it checks circuit breaker states.
         """
@@ -1056,11 +1265,11 @@ class ModelFallbackChain:
                 "circuit_failures": entry.circuit_state.failure_count,
                 "health_status": entry.health.status.value,
                 "health_latency_ms": entry.health.latency_ms,
-                "availability": self._metrics.get_availability(name),
+                "availability": self.get_provider_availability(name),
             }
         
-        overall_availability = self.get_availability()
-        target_met = overall_availability >= self._config.target_availability
+        # Issue #128: Use enhanced SLA computation
+        sla_status = self._compute_sla_status()
         
         # Get available providers count (async for thread safety)
         available_providers = await self._get_available_providers()
@@ -1068,18 +1277,57 @@ class ModelFallbackChain:
         return {
             "strategy": self._selection_strategy.value,
             "target_availability": self._config.target_availability,
-            "current_availability": overall_availability,
-            "target_met": target_met,
+            "current_availability": sla_status["current"],
+            "target_met": sla_status["target_met"],
+            "sla_risk_level": sla_status["risk_level"],
+            "error_budget_remaining_pct": sla_status["error_budget"]["remaining_percentage"],
             "total_providers": len(self._providers),
             "available_providers": len(available_providers),
             "health_checks_running": self._health_check_task is not None,
             "providers": providers_status,
-            "metrics": self._metrics.get_summary(),
+            "metrics": self.get_metrics_summary(),
         }
     
     def meets_availability_target(self) -> bool:
-        """Check if current availability meets target."""
+        """Check if current availability meets target.
+        
+        Issue #128: Simple boolean check. For detailed SLA status,
+        use get_sla_status() instead.
+        """
         return self.get_availability() >= self._config.target_availability
+    
+    def get_sla_status(self) -> Dict[str, Any]:
+        """Get detailed SLA status with risk assessment.
+        
+        Issue #128: New method providing comprehensive SLA analysis
+        including margin, risk level, and error budget tracking.
+        
+        Returns:
+            Dict with target_met, risk_level, margin, error_budget details
+        """
+        return self._compute_sla_status()
+    
+    def get_provider_rankings(self) -> List[Dict[str, Any]]:
+        """Get providers ranked by reliability and performance.
+        
+        Issue #128: New method for provider comparison and selection insights.
+        
+        Returns:
+            List of providers sorted by composite reliability score
+        """
+        return self._compute_provider_rankings()
+    
+    def get_recommendations(self) -> List[str]:
+        """Get actionable recommendations based on current metrics.
+        
+        Issue #128: New method providing human-readable recommendations.
+        
+        Returns:
+            List of recommendation strings
+        """
+        sla_status = self._compute_sla_status()
+        rankings = self._compute_provider_rankings()
+        return self._generate_recommendations(sla_status, rankings)
     
     # ========================================================================
     # Context Manager

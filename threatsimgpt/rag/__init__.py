@@ -96,17 +96,17 @@ from .vectorstore import (
     FAISSStore,
 )
 
-# Retrieval
+# Enhanced Retrieval
 from .retriever import (
-    HybridRetriever,
     QueryProcessor,
     ProcessedQuery,
     QueryIntent,
-    ContextBuilder,
-    RetrievalContext,
+    RetrievalError,
+    ConnectionError,
+    TimeoutError,
+    RetryConfig,
+    RetryHandler,
     Reranker,
-    RecencyReranker,
-    CrossEncoderReranker,
 )
 
 # Generation
@@ -149,16 +149,16 @@ __all__ = [
     "Neo4jStore",
     "ChromaDBStore",
     "FAISSStore",
-    # Retrieval
-    "HybridRetriever",
+    # Enhanced Retrieval
     "QueryProcessor",
     "ProcessedQuery",
     "QueryIntent",
-    "ContextBuilder",
-    "RetrievalContext",
+    "RetrievalError",
+    "ConnectionError",
+    "TimeoutError",
+    "RetryConfig",
+    "RetryHandler",
     "Reranker",
-    "RecencyReranker",
-    "CrossEncoderReranker",
     # Generation
     "PlaybookGenerator",
     "IntelligenceRAG",

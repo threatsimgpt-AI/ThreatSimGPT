@@ -7,14 +7,16 @@ using retrieved intelligence context.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 from .models import (
     TacticalPlaybook,
@@ -27,6 +29,135 @@ from .config import GeneratorConfig
 from .retriever import RetrievalContext, HybridRetriever
 
 logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# Caching System
+# ==========================================
+
+class CacheType(Enum):
+    """Cache storage types."""
+    MEMORY = "memory"
+    DISK = "disk"
+    REDIS = "redis"
+
+@dataclass
+class CacheEntry:
+    """Cache entry with metadata."""
+    key: str
+    value: Any
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    access_count: int = 0
+    last_accessed: Optional[datetime] = None
+    size_bytes: int = 0
+    
+    def is_expired(self) -> bool:
+        """Check if cache entry is expired."""
+        if self.expires_at is None:
+            return False
+        return datetime.now() > self.expires_at
+    
+    def touch(self):
+        """Update access metadata."""
+        self.access_count += 1
+        self.last_accessed = datetime.now()
+
+class SimpleCache:
+    """Simple in-memory cache with TTL support."""
+    
+    def __init__(self, max_size: int = 1000, default_ttl: Optional[timedelta] = None):
+        self.max_size = max_size
+        self.default_ttl = default_ttl or timedelta(hours=1)
+        self._cache: Dict[str, CacheEntry] = {}
+        self._lock = asyncio.Lock()
+        
+    def _generate_key(self, data: Union[str, Dict, List]) -> str:
+        """Generate cache key from data."""
+        if isinstance(data, str):
+            content = data
+        else:
+            content = json.dumps(data, sort_keys=True)
+        return hashlib.sha256(content.encode()).hexdigest()  # Use SHA-256 for security
+    
+    async def get(self, key: Union[str, Dict, List]) -> Optional[Any]:
+        """Get value from cache."""
+        cache_key = self._generate_key(key) if not isinstance(key, str) else key
+        
+        async with self._lock:
+            entry = self._cache.get(cache_key)
+            
+            if entry is None:
+                return None
+                
+            if entry.is_expired():
+                del self._cache[cache_key]
+                return None
+                
+            entry.touch()
+            return entry.value
+    
+    async def set(
+        self, 
+        key: Union[str, Dict, List], 
+        value: Any, 
+        ttl: Optional[timedelta] = None
+    ) -> bool:
+        """Set value in cache."""
+        cache_key = self._generate_key(key) if not isinstance(key, str) else key
+        expires_at = datetime.now() + (ttl or self.default_ttl)
+        
+        # Calculate size (rough estimation)
+        size_bytes = len(str(value).encode())
+        
+        async with self._lock:
+            # Evict if cache is full
+            if len(self._cache) >= self.max_size and cache_key not in self._cache:
+                await self._evict_lru()
+            
+            entry = CacheEntry(
+                key=cache_key,
+                value=value,
+                created_at=datetime.now(),
+                expires_at=expires_at,
+                size_bytes=size_bytes
+            )
+            
+            self._cache[cache_key] = entry
+            return True
+    
+    async def _evict_lru(self):
+        """Evict least recently used entry."""
+        if not self._cache:
+            return
+            
+        lru_key = min(
+            self._cache.keys(),
+            key=lambda k: (
+                self._cache[k].last_accessed or self._cache[k].created_at,
+                self._cache[k].access_count
+            )
+        )
+        del self._cache[lru_key]
+    
+    async def clear(self):
+        """Clear all cache entries."""
+        async with self._lock:
+            self._cache.clear()
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        async with self._lock:
+            total_size = sum(entry.size_bytes for entry in self._cache.values())
+            expired_count = sum(1 for entry in self._cache.values() if entry.is_expired())
+            
+            return {
+                "total_entries": len(self._cache),
+                "total_size_bytes": total_size,
+                "expired_entries": expired_count,
+                "max_size": self.max_size,
+                "hit_rate": getattr(self, '_hit_count', 0) / max(getattr(self, '_access_count', 1), 1)
+            }
 
 
 # ==========================================
@@ -273,12 +404,20 @@ class PlaybookGenerator:
         self,
         config: GeneratorConfig,
         retriever: HybridRetriever,
-        llm_provider: LLMProvider
+        llm_provider: LLMProvider,
+        cache: Optional[SimpleCache] = None
     ):
         self.config = config
         self.retriever = retriever
         self.llm = llm_provider
         self.templates = PromptTemplates()
+        
+        # Initialize caching
+        self.cache = cache or SimpleCache(
+            max_size=getattr(config, 'cache_max_size', 500),
+            default_ttl=timedelta(hours=getattr(config, 'cache_ttl_hours', 2))
+        )
+        self._cache_enabled = getattr(config, 'enable_cache', True)
 
     async def generate_tactical_playbook(
         self,
@@ -300,6 +439,20 @@ class PlaybookGenerator:
             TacticalPlaybook with generated content
         """
         logger.info(f"Generating tactical playbook for: {scenario}")
+        
+        # Check cache first
+        if self._cache_enabled:
+            cache_key = {
+                "type": "tactical_playbook",
+                "scenario": scenario,
+                "sector": sector,
+                "audience": audience,
+                "top_k": top_k
+            }
+            cached_result = await self.cache.get(cache_key)
+            if cached_result:
+                logger.info(f"Cache hit for tactical playbook: {scenario[:50]}...")
+                return cached_result
 
         # Generate sub-queries for comprehensive retrieval
         sub_queries = await self._decompose_query(scenario)
@@ -335,7 +488,7 @@ class PlaybookGenerator:
         # Calculate confidence
         confidence = self._calculate_confidence(results, context)
 
-        return TacticalPlaybook(
+        playbook = TacticalPlaybook(
             id=f"playbook-{datetime.now().strftime('%Y%m%d%H%M%S')}",
             title=f"Tactical Playbook: {scenario[:50]}",
             scenario=scenario,
@@ -348,6 +501,13 @@ class PlaybookGenerator:
             sector=sector,
             audience=audience
         )
+        
+        # Cache the result
+        if self._cache_enabled:
+            await self.cache.set(cache_key, playbook, ttl=timedelta(hours=6))
+            logger.info(f"Cached tactical playbook: {scenario[:50]}...")
+
+        return playbook
 
     async def generate_sector_playbook(
         self,
@@ -367,6 +527,19 @@ class PlaybookGenerator:
             SectorPlaybook with sector-specific guidance
         """
         logger.info(f"Generating sector playbook for: {sector}")
+        
+        # Check cache first
+        if self._cache_enabled:
+            cache_key = {
+                "type": "sector_playbook",
+                "sector": sector,
+                "org_size": org_size,
+                "maturity": maturity
+            }
+            cached_result = await self.cache.get(cache_key)
+            if cached_result:
+                logger.info(f"Cache hit for sector playbook: {sector}")
+                return cached_result
 
         # Sector-specific queries
         queries = [
@@ -402,20 +575,30 @@ class PlaybookGenerator:
             max_tokens=self.config.max_output_tokens
         )
 
+        # Parse generated content into sections
         sections = self._parse_playbook_content(content)
 
-        return SectorPlaybook(
-            id=f"sector-{sector.lower()}-{datetime.now().strftime('%Y%m%d')}",
-            title=f"{sector} Sector Security Playbook",
+        # Calculate confidence
+        confidence = self._calculate_confidence(results, context)
+
+        playbook = SectorPlaybook(
+            id=f"sector-{sector}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            title=f"{sector.title()} Sector Security Playbook",
             sector=sector,
+            org_size=org_size,
+            maturity_level=maturity,
             content=content,
             sections=sections,
             sources=context.sources,
-            org_size=org_size,
-            maturity_level=maturity,
-            created_at=datetime.now(),
-            compliance_frameworks=self._detect_compliance(sector)
+            created_at=datetime.now()
         )
+        
+        # Cache the result
+        if self._cache_enabled:
+            await self.cache.set(cache_key, playbook, ttl=timedelta(hours=12))
+            logger.info(f"Cached sector playbook: {sector}")
+
+        return playbook
 
     async def analyze_technique(
         self,
@@ -553,6 +736,44 @@ class PlaybookGenerator:
             logger.warning(f"Query decomposition failed: {e}")
 
         return []
+    
+    async def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        if not self._cache_enabled:
+            return {"cache_enabled": False}
+        
+        stats = await self.cache.get_stats()
+        stats["cache_enabled"] = True
+        return stats
+    
+    async def clear_cache(self):
+        """Clear the cache."""
+        if self._cache_enabled:
+            await self.cache.clear()
+            logger.info("Cache cleared")
+    
+    async def warm_cache(self, scenarios: List[str], sectors: List[str]):
+        """Warm up cache with common scenarios and sectors."""
+        if not self._cache_enabled:
+            return
+        
+        logger.info(f"Warming cache with {len(scenarios)} scenarios and {len(sectors)} sectors")
+        
+        # Warm tactical playbooks
+        for scenario in scenarios[:5]:  # Limit to prevent overload
+            try:
+                await self.generate_tactical_playbook(scenario)
+            except Exception as e:
+                logger.warning(f"Failed to warm cache for scenario {scenario}: {e}")
+        
+        # Warm sector playbooks
+        for sector in sectors[:3]:  # Limit to prevent overload
+            try:
+                await self.generate_sector_playbook(sector)
+            except Exception as e:
+                logger.warning(f"Failed to warm cache for sector {sector}: {e}")
+        
+        logger.info("Cache warming completed")
 
     def _parse_playbook_content(self, content: str) -> List[PlaybookSection]:
         """Parse generated content into structured sections."""
